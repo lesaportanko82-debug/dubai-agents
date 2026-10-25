@@ -48,6 +48,7 @@ const T = {
   whoAreYou: { ru: 'Привет! Я Домовёнок — помогаю семье делить домашние дела. Кто вы в семье?', en: 'Hi! I am Domovoy, the family dispatcher. Who are you in the family?', tl: 'Hi! Ako si Domovoy, katulong ng pamilya. Sino ka sa pamilya?' },
   linked: { ru: (n: string) => `Отлично, ${n}! Теперь я буду писать вам сюда. Отвечайте просто: «ок», «не могу», «готово».`, en: (n: string) => `Great, ${n}! I will message you here. Just reply “ok”, “can't” or “done”.`, tl: (n: string) => `Salamat, ${n}! Dito ako magmemensahe. Sagutin lang: “ok”, “hindi ko kaya”, “tapos na”.` },
   adminHint: { ru: 'Вы администратор: просто напишите, что нужно сделать — например «завтра в 17 забрать Машу из сада и купить молоко» — и я распределю.', en: 'You are an admin: just tell me what needs doing — e.g. “pick up Masha at 5pm and buy milk” — and I will dispatch it.', tl: 'Admin ka: sabihin lang kung ano ang kailangang gawin at ipamamahagi ko.' },
+  memberHint: { ru: 'Напишите, что нужно сделать или попросите кого-то о помощи — я передам как просьбу.', en: 'Tell me what you need or ask someone for help — I will pass it as a request.', tl: 'Sabihin kung ano ang kailangan mo — ipapasa ko bilang kahilingan.' },
   taken: { ru: 'Этот человек уже привязан к другому чату. Выберите другого или напишите /switch там.', en: 'That member is already linked to another chat.', tl: 'Naka-link na ang taong ito sa ibang chat.' },
   noTask: { ru: 'Сейчас у вас нет дел, которые ждут ответа.', en: 'You have no tasks waiting for a reply right now.', tl: 'Wala kang gawain na naghihintay ng sagot ngayon.' },
   accepted: { ru: (t: string) => `Принято: «${t}». Спасибо!`, en: (t: string) => `Got it: “${t}”. Thanks!`, tl: (t: string) => `Salamat! Tanggap: “${t}”.` },
@@ -124,7 +125,7 @@ function waitingTask(tasks: Task[], memberId: string, statuses: Task['status'][]
 function keyboardFor(msg: OutgoingMessage, m: Member, task?: Task): Button[][] | undefined {
   if (!msg.taskId) return undefined;
   const l = m.lang;
-  if (msg.kind === 'assignment') {
+  if (msg.kind === 'assignment' || msg.kind === 'request') {
     if (m.role === 'child') return [[{ text: t('btnDone', l), data: `f:${msg.taskId}` }]];
     const row: Button[] = [{ text: t('btnOk', l), data: `a:${msg.taskId}` }, { text: t('btnNo', l), data: `d:${msg.taskId}` }];
     if (!task?.urgent) row.push({ text: t('btnLater', l), data: `l:${msg.taskId}` });
@@ -179,7 +180,7 @@ export async function handleUpdate(store: DomovoyStore, upd: TgUpdate, deps: Tel
       await store.saveMember(m);
       await send.answerCallback(cq.id);
       if (cq.message) await send.clearKeyboard(chatId, cq.message.message_id);
-      await send.sendMessage(chatId, (t('linked', m.lang) as any)(m.name) + (m.isAdmin ? '\n\n' + t('adminHint', m.lang) : ''));
+      await send.sendMessage(chatId, (t('linked', m.lang) as any)(m.name) + '\n\n' + (m.isAdmin ? t('adminHint', m.lang) : t('memberHint', m.lang)));
       return;
     }
     const me = byChat(members, chatId);
@@ -211,7 +212,7 @@ export async function handleUpdate(store: DomovoyStore, upd: TgUpdate, deps: Tel
       for (const x of members) if (x.telegramId === chatId) { x.telegramId = undefined; await store.saveMember(x); }
       m.telegramId = chatId;
       await store.saveMember(m);
-      await send.sendMessage(chatId, (t('linked', m.lang) as any)(m.name) + (m.isAdmin ? '\n\n' + t('adminHint', m.lang) : ''));
+      await send.sendMessage(chatId, (t('linked', m.lang) as any)(m.name) + '\n\n' + (m.isAdmin ? t('adminHint', m.lang) : t('memberHint', m.lang)));
       return;
     }
     if (me) { await send.sendMessage(chatId, (t('linked', me.lang) as any)(me.name) + '\n\n' + t('help', me.lang)); return; }
@@ -263,27 +264,19 @@ export async function handleUpdate(store: DomovoyStore, upd: TgUpdate, deps: Tel
     }
   }
 
-  // ---- free text ----
-  if (me.isAdmin || me.role === 'adult') {
-    if (!deps.model) { await send.sendMessage(chatId, t('noModel', me.lang) as string); return; }
-    try {
-      const client = await deps.model();
-      const result = await runDispatch(client, store, me.id, text, { now, tz, mode: store.mode });
-      await flush();
-      // Summary only when something non-obvious happened (unassigned tasks, blocked members)
-      // Skip bare "✓" — the assignment messages already tell the author what happened
-      const s = result.summary?.trim();
-      if (s && s !== '✓' && s !== '✔') await send.sendMessage(chatId, s);
-    } catch (e: any) {
-      await send.sendMessage(chatId, `⚠️ ${e?.message ?? String(e)}`);
-    }
-    return;
+  // ---- free text → dispatch (any member can create tasks) ----
+  if (!deps.model) { await send.sendMessage(chatId, t('noModel', me.lang) as string); return; }
+  try {
+    const client = await deps.model();
+    const result = await runDispatch(client, store, me.id, text, { now, tz, mode: store.mode });
+    await flush();
+    // Summary only when something non-obvious happened (unassigned tasks, blocked members)
+    // Skip bare "✓" — the assignment messages already tell the author what happened
+    const s = result.summary?.trim();
+    if (s && s !== '✓' && s !== '✔') await send.sendMessage(chatId, s);
+  } catch (e: any) {
+    await send.sendMessage(chatId, `⚠️ ${e?.message ?? String(e)}`);
   }
-  // children / helpers: pass the message to the admins
-  const admins = members.filter(x => x.isAdmin && x.telegramId && x.id !== me.id);
-  for (const a of admins) await send.sendMessage(a.telegramId!, `💬 ${me.name}: ${text}`);
-  const adminNames = members.filter(x => x.isAdmin).map(x => x.name).join(', ');
-  await send.sendMessage(chatId, (t('forwarded', me.lang) as any)(adminNames));
 
   async function askWho() {
     const l: Lang = (msg?.from?.language_code?.startsWith('ru') ? 'ru' : 'en');

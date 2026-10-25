@@ -76,7 +76,7 @@ export async function runDispatch(client: ModelClient, store: DomovoyStore, auth
   const trace: TraceStep[] = [];
   const created: Task[] = [];
 
-  const messages: any[] = [{ role: 'user', content: `From: ${author.name} (${author.role}, id ${author.id})\nNow: ${now} (${tz})\n\nMessage:\n${text}` }];
+  const messages: any[] = [{ role: 'user', content: `From: ${author.name} (role: ${author.role}, id: ${author.id}${author.age ? ', age: ' + author.age : ''}${author.isAdmin ? ', admin' : ''})\nNow: ${now} (${tz})\n\nMessage:\n${text}` }];
   for (let step = 0; step < (opts.maxSteps ?? 10); step++) {
     const res = await client.create({ model: opts.model ?? defaultModel(), max_tokens: 1500, system: buildDispatchSystem(opts.mode ?? 'classic'), tools: DISPATCH_TOOLS, messages });
     messages.push({ role: 'assistant', content: res.content });

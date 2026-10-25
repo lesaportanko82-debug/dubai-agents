@@ -98,7 +98,7 @@ export interface OutgoingMessage {
   toId: string;
   lang: Lang;
   text: string;
-  kind: 'assignment' | 'reminder' | 'swap' | 'report' | 'info';
+  kind: 'assignment' | 'request' | 'reminder' | 'swap' | 'report' | 'info';
   taskId?: string;
 }
 
