@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { ContentBlock, ModelClient, ToolDef, TraceStep } from '../owed/agent';
 import { redact } from '../owed/redact';
 import { defaultModel } from '../owed/llm';
-import { DISPATCH_SYSTEM } from './prompts';
+import { buildDispatchSystem } from './prompts';
 import type { DomovoyStore } from './store';
 import type { Task } from './types';
 import { rankCandidates } from './tools/assign';
@@ -66,7 +66,7 @@ export const DISPATCH_TOOLS: ToolDef[] = [
 
 export interface DispatchResult { summary: string; tasks: Task[]; trace: TraceStep[]; redactions: number }
 
-export async function runDispatch(client: ModelClient, store: DomovoyStore, authorId: string, rawText: string, opts: { now?: string; tz?: string; model?: string; maxSteps?: number } = {}): Promise<DispatchResult> {
+export async function runDispatch(client: ModelClient, store: DomovoyStore, authorId: string, rawText: string, opts: { now?: string; tz?: string; model?: string; maxSteps?: number; mode?: import('./types').HouseholdMode } = {}): Promise<DispatchResult> {
   const now = opts.now ?? new Date().toISOString();
   const tz = opts.tz ?? 'Asia/Dubai';
   const { text, removed } = redact(rawText);
@@ -78,7 +78,7 @@ export async function runDispatch(client: ModelClient, store: DomovoyStore, auth
 
   const messages: any[] = [{ role: 'user', content: `From: ${author.name} (${author.role}, id ${author.id})\nNow: ${now} (${tz})\n\nMessage:\n${text}` }];
   for (let step = 0; step < (opts.maxSteps ?? 10); step++) {
-    const res = await client.create({ model: opts.model ?? defaultModel(), max_tokens: 1500, system: DISPATCH_SYSTEM, tools: DISPATCH_TOOLS, messages });
+    const res = await client.create({ model: opts.model ?? defaultModel(), max_tokens: 1500, system: buildDispatchSystem(opts.mode ?? 'classic'), tools: DISPATCH_TOOLS, messages });
     messages.push({ role: 'assistant', content: res.content });
     const calls = res.content.filter((b): b is Extract<ContentBlock, { type: 'tool_use' }> => b.type === 'tool_use');
     if (res.stop_reason !== 'tool_use' || !calls.length) {
@@ -101,7 +101,7 @@ export async function runDispatch(client: ModelClient, store: DomovoyStore, auth
       const ctx = await buildContext(store, now, tz);
       return {
         timezone: tz,
-        members: members.map(m => ({ id: m.id, name: m.name, role: m.role, age: m.age, lang: m.lang, skills: m.skills, work_hours: m.workHours, day_off: m.dayOff, week_minutes: ctx.weekMinutes[m.id], open_today: ctx.openToday[m.id], busy: m.busy.map(b => `${b.from}–${b.to} ${b.what ?? ''}`.trim()) })),
+        members: members.map(m => ({ id: m.id, name: m.name, role: m.role, age: m.age, lang: m.lang, skills: m.skills, message_style: m.messageStyle, work_hours: m.workHours, day_off: m.dayOff, week_minutes: ctx.weekMinutes[m.id], open_today: ctx.openToday[m.id], busy: m.busy.map(b => `${b.from}–${b.to} ${b.what ?? ''}`.trim()) })),
         skills: Object.keys(KID_SKILLS),
       };
     }

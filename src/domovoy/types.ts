@@ -1,5 +1,7 @@
 export type Role = 'adult' | 'child' | 'elder' | 'helper';
 export type Lang = 'ru' | 'en' | 'tl' | 'ar' | 'tr' | 'hi';
+export type HouseholdMode = 'classic' | 'quest' | 'care' | 'flat';
+export type MessageStyle = 'direct' | 'quest' | 'gentle' | 'formal';
 
 export interface Member {
   id: string;
@@ -18,6 +20,8 @@ export interface Member {
   dailyLimit: number;
   /** adults who may change rules */
   isAdmin?: boolean;
+  /** how the bot talks to this person */
+  messageStyle: MessageStyle;
 }
 
 export type TaskStatus = 'new' | 'assigned' | 'accepted' | 'done' | 'declined' | 'unassigned' | 'cancelled';
@@ -67,6 +71,24 @@ export interface Household {
   lang: Lang;
   inviteCode: string;
   pin: string;
+  mode: HouseholdMode;
+}
+
+export type GoalType = 'streak' | 'total' | 'deadline';
+export type GoalStatus = 'active' | 'achieved' | 'failed' | 'cancelled';
+
+export interface Goal {
+  id: string;
+  householdId: string;
+  title: string;
+  targetMemberId: string;
+  type: GoalType;
+  threshold: number;
+  reward: string;
+  progress: number;
+  status: GoalStatus;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface OutgoingMessage {

@@ -191,7 +191,7 @@ export async function handleOnboarding(upd: TgUpdate, deps: OnboardingDeps): Pro
     await store.saveMember({
       id: memberId, name: text, role: 'adult', lang: h.lang,
       telegramId: chatId, skills: [...Object.keys(SKILL_LABEL)],
-      busy: [], dailyLimit: 5, isAdmin: true,
+      busy: [], dailyLimit: 5, isAdmin: true, messageStyle: 'direct',
     });
     // Clear session
     session = { householdId: h.id, memberId, state: {} };
@@ -261,7 +261,7 @@ export async function handleOnboarding(upd: TgUpdate, deps: OnboardingDeps): Pro
         id: memberId, name: session.state.memberName as string, role, age,
         lang: h.lang, telegramId: chatId, skills: selected,
         busy: [], dailyLimit: role === 'child' ? 2 : role === 'helper' ? 4 : 3,
-        isAdmin: false,
+        isAdmin: false, messageStyle: role === 'child' ? 'quest' : role === 'elder' ? 'gentle' : role === 'helper' ? 'formal' : 'direct',
       });
       const savedName = session.state.memberName as string;
       session = { householdId: h.id, memberId, state: {} };

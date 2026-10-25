@@ -12,7 +12,8 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { DomovoyStore } from './store';
-import type { DispatchRun, Household, Lang, Member, OutgoingMessage, Task, TaskEvent } from './types';
+import type { DispatchRun, Goal, Household, Lang, Member, MessageStyle, OutgoingMessage, Task, TaskEvent } from './types';
+import type { HouseholdMode } from './types';
 
 type Row = Record<string, any>;
 
@@ -21,25 +22,35 @@ const memberFromRow = (r: Row): Member => ({
   telegramId: r.telegram_chat_id ?? undefined, skills: r.skills ?? [], dayOff: r.day_off?.length ? r.day_off : undefined,
   workHours: r.work_from && r.work_to ? { from: r.work_from, to: r.work_to } : undefined,
   busy: r.busy ?? [], dailyLimit: r.daily_limit ?? 3, isAdmin: !!r.is_admin,
+  messageStyle: (r.message_style as MessageStyle) ?? 'direct',
 });
 const memberToRow = (householdId: string, m: Member): Row => ({
   id: m.id, household_id: householdId, name: m.name, role: m.role, age: m.age ?? null, lang: m.lang,
   telegram_chat_id: m.telegramId ?? null, skills: m.skills, day_off: m.dayOff ?? [], work_from: m.workHours?.from ?? null, work_to: m.workHours?.to ?? null,
   busy: m.busy ?? [], daily_limit: m.dailyLimit, is_admin: !!m.isAdmin,
+  message_style: m.messageStyle ?? 'direct',
 });
-const householdFromRow = (r: Row): Household => ({ id: r.id, name: r.name, tz: r.tz, lang: r.lang, inviteCode: r.invite_code, pin: r.pin ?? '' });
+const householdFromRow = (r: Row): Household => ({ id: r.id, name: r.name, tz: r.tz, lang: r.lang, inviteCode: r.invite_code, pin: r.pin ?? '', mode: (r.mode as HouseholdMode) ?? 'classic' });
+
+const goalFromRow = (r: Row): Goal => ({
+  id: r.id, householdId: r.household_id, title: r.title, targetMemberId: r.target_member_id,
+  type: r.type, threshold: r.threshold, reward: r.reward, progress: r.progress, status: r.status,
+  createdAt: r.created_at, updatedAt: r.updated_at,
+});
 
 function fail(where: string, error: { message: string } | null) { if (error) throw new Error(`${where}: ${error.message}`); }
 
 export class SupabaseDomovoyStore implements DomovoyStore {
   readonly householdId: string;
   readonly tz: string;
+  readonly mode: HouseholdMode;
   private _members?: Member[];
   private _tasks?: Task[];
   private _events?: TaskEvent[];
   constructor(private sb: SupabaseClient, readonly household: Household) {
     this.householdId = household.id;
     this.tz = household.tz;
+    this.mode = household.mode;
   }
 
   async members() {
@@ -118,6 +129,20 @@ export class SupabaseDomovoyStore implements DomovoyStore {
     const { data, error } = await this.sb.from('dm_runs').select('*').eq('household_id', this.householdId).order('at', { ascending: false }).limit(limit);
     fail('runs', error);
     return (data ?? []).map(r => ({ id: r.id, at: r.at, authorId: r.author_id, input: r.input, result: r.result }));
+  }
+
+  async goals() {
+    const { data, error } = await this.sb.from('dm_goals').select('*').eq('household_id', this.householdId).order('created_at');
+    fail('goals', error);
+    return (data ?? []).map(goalFromRow);
+  }
+  async saveGoal(g: Goal) {
+    const { error } = await this.sb.from('dm_goals').upsert({
+      id: g.id, household_id: this.householdId, title: g.title, target_member_id: g.targetMemberId,
+      type: g.type, threshold: g.threshold, reward: g.reward, progress: g.progress, status: g.status,
+      updated_at: new Date().toISOString(),
+    });
+    fail('saveGoal', error);
   }
 }
 

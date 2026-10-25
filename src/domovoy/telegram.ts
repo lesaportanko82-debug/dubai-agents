@@ -268,7 +268,7 @@ export async function handleUpdate(store: DomovoyStore, upd: TgUpdate, deps: Tel
     if (!deps.model) { await send.sendMessage(chatId, t('noModel', me.lang) as string); return; }
     try {
       const client = await deps.model();
-      const result = await runDispatch(client, store, me.id, text, { now, tz });
+      const result = await runDispatch(client, store, me.id, text, { now, tz, mode: store.mode });
       await flush();
       // Summary only when something non-obvious happened (unassigned tasks, blocked members)
       // Skip bare "✓" — the assignment messages already tell the author what happened
