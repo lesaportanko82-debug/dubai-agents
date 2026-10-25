@@ -21,6 +21,35 @@ export async function doneAction(formData: FormData) {
   revalidatePath('/domovoy', 'layout');
 }
 
+export async function rescheduleAction(formData: FormData) {
+  const { store } = domovoyState();
+  const taskId = String(formData.get('taskId'));
+  const tasks = await store.tasks();
+  const task = tasks.find(t => t.id === taskId);
+  if (!task || task.status !== 'unassigned') return;
+  const now = demoNow();
+  const tmrw = new Date(Date.parse(now) + 86_400_000);
+  if (task.dueAt) { const d = new Date(task.dueAt); d.setDate(d.getDate() + 1); task.dueAt = d.toISOString(); }
+  else task.dueAt = tmrw.toISOString();
+  task.rescheduledFrom = now; task.status = 'new'; task.declinedBy = []; task.candidateIds = [];
+  await store.saveTask(task);
+  await store.event({ at: now, taskId: task.id, actor: 'panel', type: 'rescheduled', details: { to: task.dueAt } });
+  revalidatePath('/domovoy', 'layout');
+}
+
+export async function cancelAction(formData: FormData) {
+  const { store } = domovoyState();
+  const taskId = String(formData.get('taskId'));
+  const tasks = await store.tasks();
+  const task = tasks.find(t => t.id === taskId);
+  if (!task || task.status !== 'unassigned') return;
+  const now = demoNow();
+  task.status = 'cancelled';
+  await store.saveTask(task);
+  await store.event({ at: now, taskId: task.id, actor: 'panel', type: 'blocked', details: { reason: 'cancelled from panel' } });
+  revalidatePath('/domovoy', 'layout');
+}
+
 /** Simulate the scheduler: advance the clock by N minutes past the next due time and send reminders. */
 export async function tickAction(formData: FormData) {
   const { store } = domovoyState();

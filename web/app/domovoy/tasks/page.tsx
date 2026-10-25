@@ -67,7 +67,15 @@ export default async function TasksPage() {
                           {t.assignReason && <span className="text-mute truncate" title={reasonText(t.assignReason, lang)}>· {reasonText(t.assignReason, lang)}</span>}
                         </div>
                       )}
-                      {t.status === 'unassigned' && <div className="mt-2 text-bad">{ru ? 'Никто не может взять. Отказались: ' : 'Nobody can take it. Declined: '}{t.declinedBy.map(id => byId.get(id)?.name).join(', ')}</div>}
+                      {t.status === 'unassigned' && (
+                        <>
+                          <div className="mt-2 text-bad">{ru ? 'Никто не может взять. Отказались: ' : 'Nobody can take it. Declined: '}{t.declinedBy.map(id => byId.get(id)?.name).join(', ')}</div>
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            <form action={rescheduleAction}><input type="hidden" name="taskId" value={t.id} /><button className={`${btn} border-stone-300 bg-paper hover:border-stone-400`}>{ru ? '📅 На завтра' : '📅 Tomorrow'}</button></form>
+                            <form action={cancelAction}><input type="hidden" name="taskId" value={t.id} /><button className={`${btn} border-red-300 bg-paper text-red-600 hover:border-red-400`}>{ru ? '❌ Отменить' : '❌ Cancel'}</button></form>
+                          </div>
+                        </>
+                      )}
                       {m && t.status === 'assigned' && (
                         <div className="mt-2 flex flex-wrap gap-1.5">
                           <form action={respondAction}><input type="hidden" name="taskId" value={t.id} /><input type="hidden" name="memberId" value={m.id} /><button name="answer" value="accept" className={`${btn} accent-bg text-white border-transparent`}>{ru ? 'ок' : 'ok'}</button></form>
