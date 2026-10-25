@@ -1,0 +1,20 @@
+name: Domovoy Scheduler Tick
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'   # every 5 minutes
+  workflow_dispatch: {}       # manual trigger for testing
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Tick all households
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            "https://dubai-agents.vercel.app/api/domovoy/tick")
+          echo "HTTP $STATUS"
+          if [ "$STATUS" != "200" ]; then
+            echo "::warning::Tick returned HTTP $STATUS"
+          fi
