@@ -1,0 +1,793 @@
+<title>Domovoy JTBD & Positioning</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;700&family=Inter:wght@400;500;600&display=swap">
+
+<style>
+  /* Layout: editorial document — bilingual columns, warm but professional */
+  :root {
+    --bg: #FAFAF7;
+    --fg: #1C1917;
+    --fg-secondary: #57534E;
+    --accent: #D97706;
+    --accent-light: #FEF3C7;
+    --accent-dark: #92400E;
+    --surface: #FFFFFF;
+    --border: #E7E5E4;
+    --tag-bg: #F5F5F4;
+    --section-num: #D6D3D1;
+    --display: 'Playfair Display', 'Georgia', serif;
+    --body: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #1A1816;
+      --fg: #F5F5F4;
+      --fg-secondary: #A8A29E;
+      --accent: #F59E0B;
+      --accent-light: #422006;
+      --accent-dark: #FCD34D;
+      --surface: #292524;
+      --border: #44403C;
+      --tag-bg: #292524;
+      --section-num: #57534E;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1A1816;
+    --fg: #F5F5F4;
+    --fg-secondary: #A8A29E;
+    --accent: #F59E0B;
+    --accent-light: #422006;
+    --accent-dark: #FCD34D;
+    --surface: #292524;
+    --border: #44403C;
+    --tag-bg: #292524;
+    --section-num: #57534E;
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--body);
+    font-size: 15px;
+    line-height: 1.65;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 2rem 4rem;
+    max-width: 860px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: clamp(1.8rem, 5vw, 2.6rem);
+    line-height: 1.15;
+    text-wrap: balance;
+    margin: 0 0 0.3em;
+    color: var(--fg);
+  }
+
+  .subtitle {
+    font-size: 1.05rem;
+    color: var(--fg-secondary);
+    margin-bottom: 2.5rem;
+    line-height: 1.5;
+  }
+
+  .badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent-dark);
+    background: var(--accent-light);
+    padding: 0.25em 0.7em;
+    border-radius: 3px;
+    margin-bottom: 1.2rem;
+  }
+
+  h2 {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 1.45rem;
+    margin: 3rem 0 0.6rem;
+    color: var(--fg);
+    text-wrap: balance;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.4rem;
+  }
+
+  h3 {
+    font-weight: 600;
+    font-size: 1.05rem;
+    margin: 1.8rem 0 0.4rem;
+    color: var(--fg);
+  }
+
+  .bilingual {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin: 1rem 0;
+  }
+
+  @media (max-width: 600px) {
+    .bilingual { grid-template-columns: 1fr; gap: 0.8rem; }
+  }
+
+  .lang-block {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.2rem;
+    min-width: 0;
+  }
+
+  .lang-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 0.5rem;
+  }
+
+  .lang-block p, .lang-block li {
+    margin: 0.3em 0;
+    font-size: 0.92rem;
+    line-height: 1.6;
+  }
+
+  .lang-block ul {
+    padding-left: 1.2em;
+    margin: 0.4em 0;
+  }
+
+  .jtbd-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 6px 6px 0;
+    padding: 1rem 1.2rem;
+    margin: 1rem 0;
+  }
+
+  .jtbd-card .when {
+    font-weight: 600;
+    color: var(--accent-dark);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .jtbd-card .job {
+    font-family: var(--display);
+    font-size: 1.1rem;
+    font-weight: 500;
+    margin: 0.3em 0;
+    line-height: 1.4;
+  }
+
+  .jtbd-card .so-that {
+    color: var(--fg-secondary);
+    font-size: 0.88rem;
+  }
+
+  .faq-item {
+    margin: 1.2rem 0;
+    padding: 1rem 1.2rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+
+  .faq-q {
+    font-weight: 600;
+    color: var(--fg);
+    margin-bottom: 0.4rem;
+    font-size: 0.95rem;
+  }
+
+  .faq-a {
+    color: var(--fg-secondary);
+    font-size: 0.9rem;
+    line-height: 1.6;
+  }
+
+  .persona-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1rem;
+    margin: 1rem 0;
+  }
+
+  .persona {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+  }
+
+  .persona-icon {
+    font-size: 1.8rem;
+    margin-bottom: 0.3rem;
+  }
+
+  .persona-name {
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin-bottom: 0.2rem;
+  }
+
+  .persona-desc {
+    font-size: 0.82rem;
+    color: var(--fg-secondary);
+    line-height: 1.5;
+  }
+
+  .metric-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin: 1rem 0;
+  }
+
+  .metric {
+    flex: 1 1 140px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.8rem 1rem;
+    text-align: center;
+  }
+
+  .metric-num {
+    font-family: var(--display);
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .metric-label {
+    font-size: 0.75rem;
+    color: var(--fg-secondary);
+    margin-top: 0.15rem;
+  }
+
+  .positioning-statement {
+    background: var(--accent-light);
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin: 1.5rem 0;
+    font-family: var(--display);
+    font-size: 1.15rem;
+    line-height: 1.5;
+    font-weight: 500;
+    color: var(--fg);
+    text-align: center;
+    text-wrap: balance;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+    margin: 1rem 0;
+  }
+
+  th, td {
+    padding: 0.5rem 0.7rem;
+    border: 1px solid var(--border);
+    text-align: left;
+  }
+
+  th {
+    background: var(--tag-bg);
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .overflow-x { overflow-x: auto; }
+
+  .toc {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.5rem;
+    margin: 1.5rem 0;
+  }
+
+  .toc-title {
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--fg-secondary);
+    margin-bottom: 0.5rem;
+  }
+
+  .toc ol {
+    padding-left: 1.2em;
+    margin: 0;
+  }
+
+  .toc li {
+    margin: 0.25em 0;
+    font-size: 0.9rem;
+    color: var(--fg-secondary);
+  }
+
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 2.5rem 0;
+  }
+
+  .footer-note {
+    font-size: 0.78rem;
+    color: var(--fg-secondary);
+    text-align: center;
+    margin-top: 3rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .tab-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 2px solid var(--border);
+    margin-bottom: 1.5rem;
+  }
+  .tab-btn {
+    background: none;
+    border: none;
+    padding: 0.6rem 1.2rem;
+    font-family: var(--body);
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--fg-secondary);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: color 0.2s, border-color 0.2s;
+  }
+  .tab-btn[aria-selected="true"] {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+</style>
+
+<div class="badge">Create AI Agents Championship, Dubai 2024</div>
+<h1>Домовёнок / Domovoy</h1>
+<p class="subtitle">JTBD Framework, Marketing Positioning & Stakeholder FAQ<br>
+<span style="font-size:0.85rem; color:var(--fg-secondary)">Документ двуязычный / Bilingual Document (RU / EN)</span></p>
+
+<div class="toc">
+  <div class="toc-title">Содержание / Contents</div>
+  <ol>
+    <li>Product Vision / Видение продукта</li>
+    <li>Jobs To Be Done Framework</li>
+    <li>Target Personas / Целевые персоны</li>
+    <li>Positioning Statement / Позиционирование</li>
+    <li>Competitive Landscape / Конкуренты</li>
+    <li>Market Opportunity / Рынок</li>
+    <li>Why Now / Почему сейчас</li>
+    <li>Skeptics FAQ / Ответы скептикам</li>
+  </ol>
+</div>
+
+<!-- ───────── 1. PRODUCT VISION ───────── -->
+<h2>1. Product Vision / Видение продукта</h2>
+
+<div class="bilingual">
+  <div class="lang-block">
+    <div class="lang-label">RU</div>
+    <p><strong>Домовёнок</strong> — AI-диспетчер домашних дел. Один член семьи пишет в Telegram что нужно сделать, а бот сам разбирает задачу на части, находит кому поручить с учётом навыков, расписания и загрузки, и отправляет персональное сообщение исполнителю на его языке.</p>
+    <p>Не трекер задач. Не чат-бот. <strong>Диспетчер</strong> — как живой домовой, который знает всех в доме и тихо организует быт.</p>
+  </div>
+  <div class="lang-block">
+    <div class="lang-label">EN</div>
+    <p><strong>Domovoy</strong> is an AI household dispatcher. One family member texts what needs to be done in Telegram, and the bot breaks it into tasks, finds who can do each one based on skills, schedule, and workload, and sends a personal message to the assignee in their language.</p>
+    <p>Not a task tracker. Not a chatbot. A <strong>dispatcher</strong> — like a household spirit who knows everyone and quietly keeps things running.</p>
+  </div>
+</div>
+
+<div class="positioning-statement">
+  "Скажи что нужно — Домовёнок разберётся кому и когда."<br>
+  <span style="font-size:0.85em; font-family: var(--body); font-weight:400">"Say what needs doing — Domovoy figures out who and when."</span>
+</div>
+
+<!-- ───────── 2. JTBD ───────── -->
+<h2>2. Jobs To Be Done</h2>
+
+<h3>Core Job / Основная задача</h3>
+<div class="jtbd-card">
+  <div class="when">When / Когда</div>
+  <div class="job">I'm managing a household where multiple people share responsibilities, and I have to mentally track who can do what, when, and in which language...</div>
+  <div class="so-that"><strong>I want to</strong> delegate the dispatch — not just tracking — to an AI that knows my family's real constraints, <strong>so I can</strong> stop being the unpaid project manager of my own home.</div>
+</div>
+
+<h3>Functional Jobs / Функциональные задачи</h3>
+
+<div class="jtbd-card">
+  <div class="when">Job 1 — Dispatch / Распределение</div>
+  <div class="job">Распределить задачу правильному человеку без звонков, переписок и обид</div>
+  <div class="so-that">Dispatch the task to the right person without calls, messages, or hurt feelings</div>
+</div>
+
+<div class="jtbd-card">
+  <div class="when">Job 2 — Language Bridge / Языковой мост</div>
+  <div class="job">Написать задачу на своём языке и быть уверенным, что помощница получит сообщение на своём</div>
+  <div class="so-that">Write in my language, know the helper gets it in theirs</div>
+</div>
+
+<div class="jtbd-card">
+  <div class="when">Job 3 — Fairness / Справедливость</div>
+  <div class="job">Убедиться что нагрузка распределена честно и никто не перегружен</div>
+  <div class="so-that">Ensure workload is distributed fairly — no one is overburdened</div>
+</div>
+
+<div class="jtbd-card">
+  <div class="when">Job 4 — Follow-up / Контроль</div>
+  <div class="job">Не напоминать лично — пусть бот эскалирует и переназначит, если задача не сделана</div>
+  <div class="so-that">Never nag personally — let the bot escalate and reassign if undone</div>
+</div>
+
+<div class="jtbd-card">
+  <div class="when">Job 5 — Safety / Безопасность</div>
+  <div class="job">Быть уверенным что ребёнку не поручат опасную задачу (аптека, нож, вождение)</div>
+  <div class="so-that">Know that a child won't be assigned an unsafe task (pharmacy, driving, sharp tools)</div>
+</div>
+
+<h3>Emotional Jobs / Эмоциональные задачи</h3>
+
+<div class="bilingual">
+  <div class="lang-block">
+    <div class="lang-label">RU</div>
+    <ul>
+      <li><strong>Снять чувство вины</strong> — "я перегружаю мужа/жену/маму"</li>
+      <li><strong>Перестать быть "злым полицейским"</strong> — бот напоминает, не я</li>
+      <li><strong>Чувствовать контроль</strong> — вижу панель, вижу статусы, вижу историю</li>
+      <li><strong>Мотивировать детей</strong> — квесты и монеты вместо "иди убери комнату"</li>
+    </ul>
+  </div>
+  <div class="lang-block">
+    <div class="lang-label">EN</div>
+    <ul>
+      <li><strong>Remove guilt</strong> — "am I overloading my partner / parent?"</li>
+      <li><strong>Stop being the "bad cop"</strong> — the bot reminds, not me</li>
+      <li><strong>Feel in control</strong> — I see the panel, statuses, and history</li>
+      <li><strong>Motivate children</strong> — quests and coins instead of nagging</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ───────── 3. PERSONAS ───────── -->
+<h2>3. Target Personas / Целевые персоны</h2>
+
+<div class="persona-grid">
+  <div class="persona">
+    <div class="persona-icon">👩‍💼</div>
+    <div class="persona-name">Лена / Lena</div>
+    <div class="persona-desc"><strong>RU:</strong> Работающая мама, 2 детей, помощница-филиппинка. Устала быть "диспетчером".<br><strong>EN:</strong> Working mom, 2 kids, Filipino helper. Tired of being the dispatcher.</div>
+  </div>
+  <div class="persona">
+    <div class="persona-icon">👨‍💻</div>
+    <div class="persona-name">Карим / Karim</div>
+    <div class="persona-desc"><strong>RU:</strong> Работает удалённо, жена в офисе. Хочет справедливого разделения обязанностей.<br><strong>EN:</strong> Works remote, wife in office. Wants fair chore distribution.</div>
+  </div>
+  <div class="persona">
+    <div class="persona-icon">👵</div>
+    <div class="persona-name">Ситуация "Care" / Care scenario</div>
+    <div class="persona-desc"><strong>RU:</strong> Трое взрослых детей координируют уход за мамой-пенсионеркой удалённо.<br><strong>EN:</strong> Three adult children coordinate care for aging parent remotely.</div>
+  </div>
+  <div class="persona">
+    <div class="persona-icon">🏠</div>
+    <div class="persona-name">Flat / Соседи</div>
+    <div class="persona-desc"><strong>RU:</strong> 3–4 соседа. Дежурства, уборка, счета — нужна ротация без конфликтов.<br><strong>EN:</strong> 3–4 roommates. Cleaning, bills, duties — need fair rotation without drama.</div>
+  </div>
+</div>
+
+<!-- ───────── 4. POSITIONING ───────── -->
+<h2>4. Positioning Statement / Позиционирование</h2>
+
+<div class="bilingual">
+  <div class="lang-block">
+    <div class="lang-label">RU</div>
+    <p><strong>Для</strong> семей и домохозяйств, которые устали быть сами себе менеджерами.</p>
+    <p><strong>Домовёнок</strong> — это AI-диспетчер в Telegram,</p>
+    <p><strong>который</strong> превращает одну просьбу в распределённые персональные задачи с учётом навыков, расписания, языка и загрузки каждого члена семьи.</p>
+    <p><strong>В отличие от</strong> Google Tasks, Todoist, OurHome и семейных чатов, Домовёнок не просто хранит список дел — он <em>сам решает кому поручить</em> и сам доносит.</p>
+  </div>
+  <div class="lang-block">
+    <div class="lang-label">EN</div>
+    <p><strong>For</strong> families and households tired of being their own managers.</p>
+    <p><strong>Domovoy</strong> is an AI dispatcher in Telegram,</p>
+    <p><strong>that</strong> turns one request into distributed personal tasks, matching each family member's skills, schedule, language, and workload.</p>
+    <p><strong>Unlike</strong> Google Tasks, Todoist, OurHome, and family group chats, Domovoy doesn't just store a to-do list — it <em>decides who should do it</em> and tells them directly.</p>
+  </div>
+</div>
+
+<!-- ───────── 5. COMPETITIVE LANDSCAPE ───────── -->
+<h2>5. Competitive Landscape / Конкуренты</h2>
+
+<div class="overflow-x">
+<table>
+  <thead>
+    <tr>
+      <th>Feature</th>
+      <th>Family chats</th>
+      <th>Todoist / Google Tasks</th>
+      <th>OurHome / Cozi</th>
+      <th style="background: var(--accent-light); color: var(--accent-dark)">Domovoy</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>AI dispatch</td>
+      <td>No</td>
+      <td>No</td>
+      <td>No</td>
+      <td style="background: var(--accent-light)"><strong>Yes</strong></td>
+    </tr>
+    <tr>
+      <td>Multilingual</td>
+      <td>Manual</td>
+      <td>No</td>
+      <td>No</td>
+      <td style="background: var(--accent-light)"><strong>Auto (6 langs)</strong></td>
+    </tr>
+    <tr>
+      <td>Skill matching</td>
+      <td>No</td>
+      <td>No</td>
+      <td>Basic</td>
+      <td style="background: var(--accent-light)"><strong>Age + skill + safety</strong></td>
+    </tr>
+    <tr>
+      <td>Workload balance</td>
+      <td>No</td>
+      <td>No</td>
+      <td>Partial</td>
+      <td style="background: var(--accent-light)"><strong>Weekly minutes</strong></td>
+    </tr>
+    <tr>
+      <td>Auto-reassign</td>
+      <td>No</td>
+      <td>No</td>
+      <td>No</td>
+      <td style="background: var(--accent-light)"><strong>Escalation chain</strong></td>
+    </tr>
+    <tr>
+      <td>Gamification</td>
+      <td>No</td>
+      <td>No</td>
+      <td>Stars</td>
+      <td style="background: var(--accent-light)"><strong>Coins, quests, goals</strong></td>
+    </tr>
+    <tr>
+      <td>No app install</td>
+      <td>Yes</td>
+      <td>App required</td>
+      <td>App required</td>
+      <td style="background: var(--accent-light)"><strong>Telegram only</strong></td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<!-- ───────── 6. MARKET ───────── -->
+<h2>6. Market Opportunity / Рынок</h2>
+
+<div class="metric-row">
+  <div class="metric">
+    <div class="metric-num">3.5M</div>
+    <div class="metric-label">households in UAE</div>
+  </div>
+  <div class="metric">
+    <div class="metric-num">88%</div>
+    <div class="metric-label">expat population</div>
+  </div>
+  <div class="metric">
+    <div class="metric-num">750K+</div>
+    <div class="metric-label">domestic workers (UAE)</div>
+  </div>
+  <div class="metric">
+    <div class="metric-num">200+</div>
+    <div class="metric-label">nationalities</div>
+  </div>
+</div>
+
+<div class="bilingual">
+  <div class="lang-block">
+    <div class="lang-label">RU — Почему ОАЭ идеальный рынок</div>
+    <ul>
+      <li><strong>Мультиязычность</strong> — в одном доме могут говорить на 3–4 языках (арабский, английский, тагалог, хинди)</li>
+      <li><strong>Домашний персонал</strong> — 88% семей в Дубае имеют помощников по дому</li>
+      <li><strong>Высокий ритм жизни</strong> — оба родителя работают, мало времени на координацию</li>
+      <li><strong>Telegram-first</strong> — Telegram популярнее WhatsApp среди экспатов в ОАЭ</li>
+      <li><strong>Tech-savvy аудитория</strong> — высокий уровень проникновения смартфонов (99%)</li>
+    </ul>
+  </div>
+  <div class="lang-block">
+    <div class="lang-label">EN — Why UAE is the ideal market</div>
+    <ul>
+      <li><strong>Multilingual</strong> — one household may speak 3–4 languages (Arabic, English, Tagalog, Hindi)</li>
+      <li><strong>Domestic staff</strong> — 88% of Dubai families have household help</li>
+      <li><strong>Fast-paced life</strong> — dual-income families, little time for coordination</li>
+      <li><strong>Telegram-first</strong> — Telegram more popular than WhatsApp among UAE expats</li>
+      <li><strong>Tech-savvy</strong> — 99% smartphone penetration</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ───────── 7. WHY NOW ───────── -->
+<h2>7. Why Now / Почему сейчас</h2>
+
+<div class="bilingual">
+  <div class="lang-block">
+    <div class="lang-label">RU</div>
+    <ul>
+      <li><strong>LLM-модели стали достаточно умными</strong> — GPT-4/Claude могут парсить разговорный текст на любом языке и принимать решения с учётом контекста</li>
+      <li><strong>Function calling</strong> — AI может вызывать инструменты (assign, propose) вместо просто генерации текста</li>
+      <li><strong>Telegram Bot API</strong> созрел — веб-апп, платежи, мини-приложения</li>
+      <li><strong>Культурный сдвиг</strong> — пост-COVID семьи привыкли к цифровым инструментам для быта</li>
+      <li><strong>Конкуренция ещё слаба</strong> — ни один продукт не делает AI-диспетчеризацию для семей</li>
+    </ul>
+  </div>
+  <div class="lang-block">
+    <div class="lang-label">EN</div>
+    <ul>
+      <li><strong>LLMs are smart enough</strong> — GPT-4/Claude can parse conversational text in any language and make context-aware decisions</li>
+      <li><strong>Function calling</strong> — AI can invoke tools (assign, propose) rather than just generate text</li>
+      <li><strong>Telegram Bot API matured</strong> — web apps, payments, mini-apps</li>
+      <li><strong>Cultural shift</strong> — post-COVID families adopted digital tools for household management</li>
+      <li><strong>Weak competition</strong> — no product does AI dispatch for families</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ───────── 8. FAQ ───────── -->
+<h2>8. Skeptics FAQ / Ответы скептикам</h2>
+
+<div class="tab-bar" role="tablist">
+  <button class="tab-btn" role="tab" aria-selected="true" data-tab="ru">Русский</button>
+  <button class="tab-btn" role="tab" aria-selected="false" data-tab="en">English</button>
+</div>
+
+<div id="tab-ru" class="tab-panel active">
+
+<div class="faq-item">
+  <div class="faq-q">❓ "Зачем AI? Можно просто написать в семейный чат."</div>
+  <div class="faq-a">Семейный чат — это место где сообщения тонут. "Купи молоко" в чате на 15 человек = никто не купит. Домовёнок не просто передаёт сообщение — он <em>решает</em> кому поручить, проверяет что человек свободен, имеет нужный навык, не перегружен, и отправляет ему персональное сообщение. Если тот не ответит — переназначит. Это не чат. Это диспетчер.</div>
+</div>
+
+<div class="faq-item">
+  <div class="faq-q">❓ "У нас есть Todoist / Google Tasks."</div>
+  <div class="faq-a">Todoist хранит что нужно сделать. Но кто будет назначать? Кто проверит расписание бабушки? Кто напомнит помощнице на тагальском? Todoist — блокнот. Домовёнок — менеджер. Разница в том, что вам не нужно думать КТО и КОГДА — только ЧТО.</div>
+</div>
+
+<div class="faq-item">
+  <div class="faq-q">❓ "AI не понимает контекст семьи."</div>
+  <div class="faq-a">Домовёнок знает каждого: возраст, навыки, рабочие часы, выходные, текущую загрузку за неделю. 10-летнему не поручит аптеку. Помощнице не отправит задачу в её выходной. Бабушке не даст больше 2 задач в день. Это не general-purpose чат-бот — это специализированный агент с полной моделью семьи.</div>
+</div>
+
+<div class="faq-item">
+  <div class="faq-q">❓ "Это сложно настроить."</div>
+  <div class="faq-a">Онбординг в Telegram: пишешь имена, роли, навыки. 3 минуты — и семья подключена. Каждый член семьи получает ссылку-приглашение и проходит свой мини-онбординг. Не нужно устанавливать приложение — все работает в Telegram.</div>
+</div>
+
+<div class="faq-item">
+  <div class="faq-q">❓ "А безопасность? Мои данные?"</div>
+  <div class="faq-a">Все данные хранятся в Supabase с Row Level Security. Персональные данные (PII) редактируются на входе. Ключи API никогда не попадают в код. Бот не имеет доступа к переписке — только к сообщениям адресованным ему. Модель семьи хранится отдельно от AI и не используется для обучения.</div>
+</div>
+
+<div class="faq-item">
+  <div class="faq-q">❓ "Это просто обёртка над ChatGPT."</div>
+  <div class="faq-a">Нет. Домовёнок — это 4-шаговый агент с function calling: get_family → propose_tasks → assign → summary. У него есть модель семьи, алгоритм ранжирования кандидатов, система эскалации, детская безопасность, и мультиязычная маршрутизация. ChatGPT не знает что у бабушки выходной в четверг.</div>
+</div>
+
+</div>
+
+<div id="tab-en" class="tab-panel">
+
+<div class="faq-item">
+  <div class="faq-q">❓ "Why AI? Just text the family group chat."</div>
+  <div class="faq-a">A family chat is where messages drown. "Buy milk" in a 15-person chat = nobody buys it. Domovoy doesn't just relay — it <em>decides</em> who to assign, checks availability, skills, and workload, and sends a personal message. If they don't respond, it reassigns. It's not a chat. It's a dispatcher.</div>
+</div>
+
+<div class="faq-item">
+  <div class="faq-q">❓ "We already use Todoist / Google Tasks."</div>
+  <div class="faq-a">Todoist stores what needs doing. But who assigns? Who checks grandma's schedule? Who reminds the helper in Tagalog? Todoist is a notepad. Domovoy is a manager. The difference: you only think about WHAT — never WHO or WHEN.</div>
+</div>
+
+<div class="faq-item">
+  <div class="faq-q">❓ "AI doesn't understand family context."</div>
+  <div class="faq-a">Domovoy knows everyone: age, skills, working hours, days off, weekly load. It won't assign pharmacy runs to a 10-year-old. Won't message the helper on her day off. Won't overload grandma beyond 2 tasks/day. This isn't a general chatbot — it's a specialized agent with a complete family model.</div>
+</div>
+
+<div class="faq-item">
+  <div class="faq-q">❓ "It's complicated to set up."</div>
+  <div class="faq-a">Onboarding happens in Telegram: type names, roles, skills. 3 minutes and your family is connected. Each member gets an invite link with a mini-onboarding. No app install — everything works inside Telegram.</div>
+</div>
+
+<div class="faq-item">
+  <div class="faq-q">❓ "What about privacy and data security?"</div>
+  <div class="faq-a">All data is stored in Supabase with Row Level Security. PII is redacted on input. API keys never enter the codebase. The bot only sees messages sent directly to it — not your chats. The family model is stored separately from the AI and is not used for training.</div>
+</div>
+
+<div class="faq-item">
+  <div class="faq-q">❓ "It's just a ChatGPT wrapper."</div>
+  <div class="faq-a">No. Domovoy is a 4-step agent with function calling: get_family → propose_tasks → assign → summary. It has a family model, a candidate ranking algorithm, an escalation system, child safety rules, and multilingual routing. ChatGPT doesn't know grandma's day off is Thursday.</div>
+</div>
+
+</div>
+
+<div class="divider"></div>
+
+<!-- ───────── ARCHITECTURE MODES ───────── -->
+<h2>Appendix: Household Modes / Режимы</h2>
+
+<div class="overflow-x">
+<table>
+  <thead>
+    <tr>
+      <th>Mode</th>
+      <th>Use case (RU)</th>
+      <th>Use case (EN)</th>
+      <th>Tone</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Classic</strong></td>
+      <td>Полная семья: мама, папа, дети, бабушка, помощница</td>
+      <td>Full family: parents, kids, grandma, helper</td>
+      <td>Balanced fairness</td>
+    </tr>
+    <tr>
+      <td><strong>Quest</strong></td>
+      <td>Геймификация для детей — монеты, квесты, награды</td>
+      <td>Gamification for kids — coins, quests, rewards</td>
+      <td>Encouraging, playful</td>
+    </tr>
+    <tr>
+      <td><strong>Care</strong></td>
+      <td>Координация ухода за пожилым родителем</td>
+      <td>Elderly care coordination</td>
+      <td>Gentle, medical-aware</td>
+    </tr>
+    <tr>
+      <td><strong>Flat</strong></td>
+      <td>Соседи по квартире — ротация без иерархии</td>
+      <td>Roommates — rotation with no hierarchy</td>
+      <td>Neutral, professional</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="footer-note">
+  Домовёнок / Domovoy — Create AI Agents Championship, Dubai<br>
+  Version 1.0 &middot; October 2026
+</div>
+
+<script>
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.setAttribute('aria-selected', 'false'));
+      btn.setAttribute('aria-selected', 'true');
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    });
+  });
+</script>
