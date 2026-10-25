@@ -25,6 +25,12 @@ test('attribution without serial on multi-batch SKU is a flagged guess', () => {
   assert.equal(a.candidates, 2);
 });
 
+test('attribution tolerates Cyrillic look-alikes, missing dash and phonetic typing', () => {
+  assert.equal(attributeBatch(DEMO_BATCHES, 'МХ-210', 102340).batch?.code, 'B-2026-058'); // Cyrillic М, Х
+  assert.equal(attributeBatch(DEMO_BATCHES, 'mx210', 100777).batch?.code, 'B-2026-031');
+  assert.equal(attributeBatch(DEMO_BATCHES, 'вл15', 900500).batch?.code, 'B-2026-061');
+});
+
 test('attribution: single-batch SKU and unknown SKU', () => {
   assert.equal(attributeBatch(DEMO_BATCHES, 'KT-550').method, 'sku_single_batch');
   assert.equal(attributeBatch(DEMO_BATCHES, 'ZZ-1').method, 'none');

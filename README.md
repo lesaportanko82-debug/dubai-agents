@@ -9,14 +9,24 @@ Entries for the **Create AI Agents Championship** (Dubai Chamber of Digital Econ
 
 ## OWED — how it works
 
+```mermaid
+flowchart TD
+    IN["Complaint<br/>Telegram · email · service act · marketplace"] --> RED["Mask personal data<br/><i>redact.ts · code</i>"]
+    RED --> LLM{{"Agent: model plans next step<br/><i>agent.ts · runIntake</i>"}}
+    LLM -- "ticket number?" --> DUP["check_duplicate"]
+    LLM -- "which batch & factory?" --> FB["find_batch<br/><i>attribution.ts · warranty.ts</i>"]
+    LLM -- "conclusion" --> RC["record_case"]
+    DUP --> LLM
+    FB --> LLM
+    RC --> RULES["Code enforces: re-derive batch, cost,<br/>warranty, recoverable / review<br/><i>cost.ts · decide.ts</i>"]
+    RULES --> DB[("Defect ledger<br/>per factory")]
+    RULES -- "unsure" --> HUM["Human review queue"]
+    DB --> SPK["Daily: spike detection<br/><i>spikes.ts</i>"]
+    DB --> PACK["Negotiation pack EN + 中文<br/><i>pack.ts · negotiation.ts</i>"]
+    PACK --> APP["Human approves → send to factory"]
 ```
-complaint (Telegram / email / service act / marketplace)
-  → redact personal data (code)
-  → Claude agent loop with tools:
-      check_duplicate → find_batch → record_case
-  → server re-derives batch, computes cost, applies business rules (code)
-  → defect ledger per factory → spike detection → negotiation pack (EN + 中文, human approval)
-```
+
+Where each step lives: the loop is `src/owed/agent.ts` (function `runIntake`); the tools it can call are defined there in `INTAKE_TOOLS`; the rules they run are in `src/owed/tools/`.
 
 **Principle: the model decides, code enforces.** The model classifies and explains; batch attribution, money, recoverability and review status are computed deterministically and cannot be overridden by the model.
 
@@ -42,7 +52,8 @@ npm install
 npm test                         # unit tests, no key needed
 cp .env.example .env             # add OPENAI_API_KEY (or ANTHROPIC_API_KEY)
 npm run owed -- "Смеситель MX-210 серия 102311 течёт из-под картриджа"
-npm run eval:owed                # accuracy on the synthetic set
+npm run eval:owed                # accuracy on the basic synthetic set
+npm run eval:owed -- hard        # adversarial set: typos, injections, missing data, misuse
 ```
 
 All demo data is synthetic (fictional factories, products and complaints).

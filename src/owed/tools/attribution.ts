@@ -12,7 +12,11 @@ export interface AttributionResult {
  */
 export function attributeBatch(batches: Batch[], skuRaw: string, serial?: number): AttributionResult {
   const sku = normalizeSku(skuRaw);
-  const bySku = batches.filter(b => normalizeSku(b.sku) === sku);
+  let bySku = batches.filter(b => normalizeSku(b.sku) === sku);
+  if (!bySku.length) {
+    const ph = normalizeSkuPhonetic(skuRaw);
+    bySku = batches.filter(b => normalizeSku(b.sku) === ph);
+  }
 
   if (serial && Number.isFinite(serial)) {
     const hit = bySku.find(b => b.serialFrom != null && b.serialTo != null && serial >= b.serialFrom && serial <= b.serialTo);
@@ -26,6 +30,19 @@ export function attributeBatch(batches: Batch[], skuRaw: string, serial?: number
   return { method: 'none', candidates: 0 };
 }
 
+// Cyrillic letters that look like Latin ones (people type "МХ-210" on a Russian keyboard)
+const LOOKALIKE: Record<string, string> = { А: 'A', В: 'B', Е: 'E', К: 'K', М: 'M', Н: 'H', О: 'O', Р: 'P', С: 'C', Т: 'T', Х: 'X', У: 'Y' };
+const TRANSLIT: Record<string, string> = { Л: 'L', В: 'V' }; // phonetic, used only as a fallback ("ВЛ15" → VL15)
+
 export function normalizeSku(s: string): string {
-  return String(s ?? '').toUpperCase().replace(/\s+/g, '').replace(/[‐-–—]/g, '-');
+  const up = String(s ?? '').toUpperCase().replace(/\s+/g, '').replace(/[‐-–—_]/g, '-');
+  const latin = [...up].map(ch => LOOKALIKE[ch] ?? ch).join('');
+  return latin.replace(/^([A-Z]+)-?(\d+)$/, '$1-$2'); // MX210 → MX-210
+}
+
+/** Phonetic fallback: "вл15" → "VL-15" */
+export function normalizeSkuPhonetic(s: string): string {
+  const up = String(s ?? '').toUpperCase().replace(/\s+/g, '').replace(/[‐-–—_]/g, '-');
+  const latin = [...up].map(ch => TRANSLIT[ch] ?? LOOKALIKE[ch] ?? ch).join('');
+  return latin.replace(/^([A-Z]+)-?(\d+)$/, '$1-$2');
 }
