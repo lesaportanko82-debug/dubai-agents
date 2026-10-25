@@ -120,3 +120,72 @@ export interface Candidate {
   score: number;
   reasons: string[];
 }
+
+// ── Agent Architecture: 4 Pillars ──
+
+export type PatternType =
+  | 'decline_time' | 'decline_skill' | 'preferred_time' | 'recurring_task'
+  | 'response_speed' | 'completion_rate' | 'pair_affinity' | 'pair_conflict';
+
+export interface Pattern {
+  id?: number;
+  householdId: string;
+  memberId: string;
+  patternType: PatternType;
+  data: Record<string, unknown>;
+  confidence: number;       // 0..1
+  observedCount: number;
+  firstSeen: string;
+  lastSeen: string;
+  active: boolean;
+}
+
+export type PlanStatus = 'planning' | 'executing' | 'completed' | 'failed' | 'cancelled';
+
+export interface PlanStep {
+  step: number;
+  tool: string;
+  args: Record<string, unknown>;
+  status: 'pending' | 'done' | 'failed' | 'skipped';
+  result?: unknown;
+}
+
+export interface AgentPlan {
+  id: string;
+  householdId: string;
+  triggerText: string;
+  authorId: string;
+  steps: PlanStep[];
+  status: PlanStatus;
+  createdAt: string;
+  completedAt?: string;
+  data: Record<string, unknown>;
+}
+
+export type ReminderStatus = 'pending' | 'sent' | 'cancelled';
+
+export interface Reminder {
+  id: string;
+  householdId: string;
+  memberId: string;
+  text: string;
+  remindAt: string;
+  recurring?: 'daily' | 'weekly' | 'monthly';
+  status: ReminderStatus;
+  createdAt: string;
+  taskId?: string;
+}
+
+export type InsightType =
+  | 'morning_briefing' | 'rebalance_suggestion' | 'conflict_warning' | 'pattern_prediction'
+  | 'streak_alert' | 'idle_member' | 'overload_warning' | 'weekly_digest';
+
+export interface Insight {
+  id?: number;
+  householdId: string;
+  insightType: InsightType;
+  targetMemberId?: string;
+  data: Record<string, unknown>;
+  delivered: boolean;
+  createdAt: string;
+}

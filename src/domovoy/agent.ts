@@ -5,10 +5,15 @@ import { redact } from '../owed/redact';
 import { defaultModel } from '../owed/llm';
 import { buildDispatchSystem } from './prompts';
 import type { DomovoyStore } from './store';
-import type { Lang, Task } from './types';
+import type { Lang, Reminder, Task } from './types';
 import { rankCandidates } from './tools/assign';
 import { assignTask, buildContext } from './household';
 import { KID_SKILLS } from './fixtures';
+import { patternContext } from './memory';
+
+function hourIn(iso: string, tz: string): number {
+  return parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', hour12: false }).format(new Date(iso)));
+}
 
 /** Rate limits: max tasks an author may create per hour. */
 const RATE_LIMIT: Record<string, number> = { child: 5, adult: 15, elder: 15, helper: 15 };
@@ -30,8 +35,73 @@ const ProposeIn = z.object({
 });
 const AssignIn = z.object({ task_id: z.string(), member_id: z.string(), reason: z.string().min(3).max(200), message: z.string().min(3).max(400) });
 
+const CheckPatternsIn = z.object({ member_id: z.string().optional() });
+const PlanSequenceIn = z.object({
+  goal: z.string().min(3).max(300),
+  steps: z.array(z.object({
+    description: z.string().min(2).max(200),
+    tool: z.string(),
+    args: z.record(z.unknown()),
+  })).min(1).max(8),
+});
+const SetReminderIn = z.object({
+  member_id: z.string(),
+  text: z.string().min(2).max(200),
+  remind_at: z.string(),
+  recurring: z.enum(['daily', 'weekly', 'monthly']).optional(),
+  task_id: z.string().optional(),
+});
+const EvaluateAlternativesIn = z.object({
+  task_id: z.string(),
+  criteria: z.string().optional(),
+});
+
 export const DISPATCH_TOOLS: ToolDef[] = [
-  { name: 'get_family', description: 'Family members with roles, ages, languages, skills, working hours and this week’s load.', input_schema: { type: 'object', properties: {} } },
+  { name: 'get_family', description: "Family members with roles, ages, languages, skills, working hours and this week's load.", input_schema: { type: 'object', properties: {} } },
+  {
+    name: 'check_patterns',
+    description: 'Retrieve learned behavioral patterns for a member (or all). Use BEFORE propose_tasks to make smarter assignments: decline patterns, preferred times, response speeds, pair affinities.',
+    input_schema: { type: 'object', properties: { member_id: { type: 'string', description: 'Optional: specific member ID. Omit for all members.' } } },
+  },
+  {
+    name: 'plan_sequence',
+    description: 'Break a complex request into a multi-step plan. Use when the message implies multiple dependent actions (e.g. "organize a birthday party for Saturday" → check availability, create tasks, set reminders, coordinate). Returns a plan ID for tracking.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        goal: { type: 'string', description: 'What the plan achieves' },
+        steps: { type: 'array', items: { type: 'object', properties: { description: { type: 'string' }, tool: { type: 'string', description: 'Which tool to call for this step' }, args: { type: 'object', description: 'Arguments for the tool' } }, required: ['description', 'tool', 'args'] } },
+      },
+      required: ['goal', 'steps'],
+    },
+  },
+  {
+    name: 'set_reminder',
+    description: 'Schedule a reminder for a member at a specific time. Can be one-time or recurring (daily/weekly/monthly). Use for "remind me", "напомни", medicine schedules, appointments.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        member_id: { type: 'string' },
+        text: { type: 'string', description: 'Reminder message in the member\'s language' },
+        remind_at: { type: 'string', description: 'ISO 8601 timestamp' },
+        recurring: { type: 'string', enum: ['daily', 'weekly', 'monthly'] },
+        task_id: { type: 'string', description: 'Link to a task if relevant' },
+      },
+      required: ['member_id', 'text', 'remind_at'],
+    },
+  },
+  {
+    name: 'evaluate_alternatives',
+    description: 'Re-rank candidates for a task with pattern-aware scoring. Shows WHY each candidate fits better or worse based on learned behavior: decline patterns, preferred times, workload, pair dynamics.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string' },
+        criteria: { type: 'string', description: 'Optional extra criteria to consider' },
+      },
+      required: ['task_id'],
+    },
+  },
   {
     name: 'propose_tasks',
     description: 'Register the tasks you extracted from the message. Returns allowed candidates (ranked, with reasons) and blocked members per task.',
@@ -63,7 +133,7 @@ export const DISPATCH_TOOLS: ToolDef[] = [
     description: 'Assign one task to one ALLOWED member and send them your message. Returns confirmation or an error with the allowed list.',
     input_schema: {
       type: 'object',
-      properties: { task_id: { type: 'string' }, member_id: { type: 'string' }, reason: { type: 'string', description: 'One line: why this person' }, message: { type: 'string', description: 'Personal message in the recipient’s language' } },
+      properties: { task_id: { type: 'string' }, member_id: { type: 'string' }, reason: { type: 'string', description: 'One line: why this person' }, message: { type: 'string', description: "Personal message in the recipient's language" } },
       required: ['task_id', 'member_id', 'reason', 'message'],
     },
   },
@@ -81,9 +151,12 @@ export async function runDispatch(client: ModelClient, store: DomovoyStore, auth
   const trace: TraceStep[] = [];
   const created: Task[] = [];
 
+  // Build pattern context for the system prompt
+  const patternCtx = await patternContext(store);
+
   const messages: any[] = [{ role: 'user', content: `From: ${author.name} (role: ${author.role}, id: ${author.id}${author.age ? ', age: ' + author.age : ''}${author.isAdmin ? ', admin' : ''})\nNow: ${now} (${tz})\n\nMessage:\n${text}` }];
   for (let step = 0; step < (opts.maxSteps ?? 10); step++) {
-    const res = await client.create({ model: opts.model ?? defaultModel(), max_tokens: 1500, system: buildDispatchSystem(opts.mode ?? 'classic'), tools: DISPATCH_TOOLS, messages });
+    const res = await client.create({ model: opts.model ?? defaultModel(), max_tokens: 2000, system: buildDispatchSystem(opts.mode ?? 'classic') + patternCtx, tools: DISPATCH_TOOLS, messages });
     messages.push({ role: 'assistant', content: res.content });
     const calls = res.content.filter((b): b is Extract<ContentBlock, { type: 'tool_use' }> => b.type === 'tool_use');
     if (res.stop_reason !== 'tool_use' || !calls.length) {
@@ -109,6 +182,83 @@ export async function runDispatch(client: ModelClient, store: DomovoyStore, auth
         members: members.map(m => ({ id: m.id, name: m.name, role: m.role, age: m.age, lang: m.lang, skills: m.skills, message_style: m.messageStyle, work_hours: m.workHours, day_off: m.dayOff, week_minutes: ctx.weekMinutes[m.id], open_today: ctx.openToday[m.id], busy: m.busy.map(b => `${b.from}–${b.to} ${b.what ?? ''}`.trim()) })),
         skills: Object.keys(KID_SKILLS),
       };
+    }
+    if (name === 'check_patterns') {
+      const { member_id } = CheckPatternsIn.parse(input);
+      const patterns = await store.patterns(member_id);
+      const active = patterns.filter(p => p.active && p.confidence >= 0.3);
+      if (!active.length) return { patterns: [], note: 'No behavioral patterns detected yet. Patterns emerge after 3+ interactions.' };
+      return {
+        patterns: active.map(p => ({
+          member_id: p.memberId,
+          type: p.patternType,
+          confidence: Math.round(p.confidence * 100) + '%',
+          data: p.data,
+          observed: p.observedCount,
+        })),
+      };
+    }
+    if (name === 'plan_sequence') {
+      const { goal, steps } = PlanSequenceIn.parse(input);
+      const plan = {
+        id: 'plan-' + randomUUID().slice(0, 8),
+        householdId: store.householdId,
+        triggerText: text,
+        authorId,
+        steps: steps.map((s, i) => ({ step: i + 1, tool: s.tool, args: s.args, status: 'pending' as const, description: s.description })),
+        status: 'planning' as const,
+        createdAt: now,
+        data: { goal },
+      };
+      await store.savePlan(plan);
+      return { plan_id: plan.id, goal, steps: plan.steps.length, note: 'Plan created. Execute each step using the listed tools.' };
+    }
+    if (name === 'set_reminder') {
+      const r = SetReminderIn.parse(input);
+      const m = members.find(x => x.id === r.member_id);
+      if (!m) throw new Error('unknown member_id');
+      const reminder: Reminder = {
+        id: 'rem-' + randomUUID().slice(0, 8),
+        householdId: store.householdId,
+        memberId: r.member_id,
+        text: r.text,
+        remindAt: r.remind_at,
+        recurring: r.recurring,
+        status: 'pending',
+        createdAt: now,
+        taskId: r.task_id,
+      };
+      await store.saveReminder(reminder);
+      return { ok: true, reminder_id: reminder.id, for: m.name, at: r.remind_at, recurring: r.recurring ?? 'one-time' };
+    }
+    if (name === 'evaluate_alternatives') {
+      const { task_id, criteria } = EvaluateAlternativesIn.parse(input);
+      const t = created.find(x => x.id === task_id) ?? (await store.tasks()).find(x => x.id === task_id);
+      if (!t) throw new Error('unknown task_id');
+      const ctx = await buildContext(store, now, tz);
+      ctx.existingTasks = await store.tasks();
+      const { allowed, blocked } = rankCandidates(members, t, ctx);
+      // Enrich with pattern data
+      const patterns = await store.patterns();
+      const enriched = allowed.map(c => {
+        const mp = patterns.filter(p => p.memberId === c.memberId && p.active);
+        const hints: string[] = [];
+        const decTime = mp.find(p => p.patternType === 'decline_time');
+        if (decTime && t.dueAt) {
+          const taskHour = hourIn(t.dueAt, tz);
+          if ((decTime.data.hours as number[]).includes(taskHour)) hints.push(`⚠️ Often declines at ${taskHour}:00`);
+        }
+        const speed = mp.find(p => p.patternType === 'response_speed');
+        if (speed) hints.push(`Avg response: ${speed.data.avgMinutes}min`);
+        const rate = mp.find(p => p.patternType === 'completion_rate');
+        if (rate) hints.push(`Completion: ${Math.round((rate.data.rate as number) * 100)}%`);
+        const affinity = mp.find(p => p.patternType === 'pair_affinity' && p.data.partnerId === t.authorId);
+        if (affinity) hints.push(`✓ Good pair with author`);
+        const conflict = mp.find(p => p.patternType === 'pair_conflict' && p.data.partnerId === t.authorId);
+        if (conflict) hints.push(`⚠️ Friction with author`);
+        return { ...c, member_name: members.find(x => x.id === c.memberId)?.name, pattern_hints: hints };
+      });
+      return { task_id, candidates: enriched, blocked, criteria: criteria ?? 'default ranking + patterns' };
     }
     if (name === 'propose_tasks') {
       const { tasks } = ProposeIn.parse(input);

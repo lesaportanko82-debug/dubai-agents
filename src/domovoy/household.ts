@@ -3,10 +3,11 @@
  * No model involved — these must be predictable.
  */
 import type { DomovoyStore } from './store';
-import type { Lang, Member, Task } from './types';
+import type { Insight, Lang, Member, Task } from './types';
 import { rankCandidates, type AssignContext } from './tools/assign';
 import { dueReminders } from './tools/reminders';
 import { balanceSuggestion, weeklyLedger, weekBounds } from './tools/fairness';
+import { detectPatterns } from './memory';
 
 /** Policy knobs (per family in production). */
 export const POLICY = {
@@ -232,7 +233,184 @@ export async function tick(store: DomovoyStore, nowIso: string) {
     await store.event({ at: nowIso, taskId: g.id, actor: 'agent', type: 'info' as any, details: { goalId: g.id, kind: 'difficulty_warning' } });
   }
 
+  // ── Pillar 3: Deliver pending reminders ──
+  const dueRems = await store.reminders({ pending: true });
+  for (const rem of dueRems) {
+    if (rem.remindAt > nowIso) continue;
+    const m = byId.get(rem.memberId);
+    if (!m) continue;
+    await store.send({ at: nowIso, toId: m.id, lang: m.lang, kind: 'reminder', text: `🔔 ${rem.text}` });
+    sent.push({ kind: 'scheduled_reminder', toId: m.id, text: rem.text });
+    if (rem.recurring) {
+      // Schedule the next occurrence
+      const next = new Date(rem.remindAt);
+      if (rem.recurring === 'daily') next.setDate(next.getDate() + 1);
+      else if (rem.recurring === 'weekly') next.setDate(next.getDate() + 7);
+      else if (rem.recurring === 'monthly') next.setMonth(next.getMonth() + 1);
+      rem.remindAt = next.toISOString();
+      await store.saveReminder(rem);
+    } else {
+      rem.status = 'sent';
+      await store.saveReminder(rem);
+    }
+  }
+
+  // ── Pillar 1: Run pattern detection (once per hour max) ──
+  const lastPatternRun = (await store.events()).filter(e => e.type === 'info' as any && e.details?.kind === 'pattern_detection').pop();
+  const hoursSincePatterns = lastPatternRun ? (now - t2(lastPatternRun.at)) / 3_600_000 : Infinity;
+  if (hoursSincePatterns >= 1) {
+    await detectPatterns(store, nowIso);
+    await store.event({ at: nowIso, taskId: 'system', actor: 'agent', type: 'info' as any, details: { kind: 'pattern_detection' } });
+  }
+
+  // ── Pillar 4: Generate proactive insights ──
+  const insights = await generateInsights(store, members, tasks, nowIso);
+  for (const ins of insights) {
+    await store.saveInsight(ins);
+    // Deliver insight messages
+    const target = ins.targetMemberId ? byId.get(ins.targetMemberId) : undefined;
+    const admins = members.filter(m => m.isAdmin);
+    const recipients = target ? [target] : admins;
+    for (const r of recipients) {
+      const text = formatInsight(ins, r.lang);
+      if (text) {
+        await store.send({ at: nowIso, toId: r.id, lang: r.lang, kind: 'info', text });
+        sent.push({ kind: `insight_${ins.insightType}`, toId: r.id, text });
+      }
+    }
+    await store.markInsightDelivered(ins.id!);
+  }
+
   return sent;
+}
+
+/** Generate proactive insights based on current household state */
+async function generateInsights(store: DomovoyStore, members: Member[], tasks: Task[], nowIso: string): Promise<Insight[]> {
+  const now = new Date(nowIso);
+  const hour = parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: store.tz, hour: '2-digit', hour12: false }).format(now));
+  const insights: Insight[] = [];
+  const recentInsights = await store.insights({ limit: 50 });
+  const todayStr = nowIso.slice(0, 10);
+  const alreadyToday = (type: string) => recentInsights.some(i => i.insightType === type && i.createdAt.slice(0, 10) === todayStr);
+
+  // ── Morning briefing (once per day, 7-9 AM) ──
+  if (hour >= 7 && hour <= 9 && !alreadyToday('morning_briefing')) {
+    const openTasks = tasks.filter(t => ['assigned', 'accepted', 'new'].includes(t.status));
+    const todayDue = openTasks.filter(t => t.dueAt?.slice(0, 10) === todayStr);
+    if (openTasks.length > 0) {
+      for (const m of members.filter(m => m.isAdmin)) {
+        insights.push({
+          householdId: store.householdId, insightType: 'morning_briefing',
+          targetMemberId: m.id, delivered: false, createdAt: nowIso,
+          data: { openCount: openTasks.length, todayDueCount: todayDue.length, todayDueTasks: todayDue.slice(0, 5).map(t => t.text) },
+        });
+      }
+    }
+  }
+
+  // ── Overload warning — member > 80% daily limit ──
+  if (!alreadyToday('overload_warning')) {
+    const day = nowIso.slice(0, 10);
+    for (const m of members) {
+      const todayOpen = tasks.filter(t => t.assigneeId === m.id && ['assigned', 'accepted'].includes(t.status) && (t.dueAt ?? t.createdAt).slice(0, 10) === day).length;
+      if (todayOpen >= m.dailyLimit * 0.8 && todayOpen > 1) {
+        insights.push({
+          householdId: store.householdId, insightType: 'overload_warning',
+          targetMemberId: m.id, delivered: false, createdAt: nowIso,
+          data: { memberName: m.name, openCount: todayOpen, limit: m.dailyLimit },
+        });
+      }
+    }
+  }
+
+  // ── Rebalance suggestion (once per day, afternoon) ──
+  if (hour >= 14 && hour <= 16 && !alreadyToday('rebalance_suggestion')) {
+    const { start, end } = weekBounds(nowIso);
+    const weekMinutes: Record<string, number> = {};
+    for (const m of members) {
+      weekMinutes[m.id] = tasks.filter(t => t.assigneeId === m.id && t.status === 'done' && t.doneAt && t.doneAt >= start && t.doneAt < end).reduce((s, t) => s + t.minutes, 0);
+    }
+    const vals = Object.values(weekMinutes).filter(v => v > 0);
+    if (vals.length >= 2) {
+      const max = Math.max(...vals);
+      const min = Math.min(...vals);
+      if (max > 0 && max / Math.max(min, 1) > 2) {
+        const overloaded = members.find(m => weekMinutes[m.id] === max);
+        const underloaded = members.find(m => weekMinutes[m.id] === min);
+        insights.push({
+          householdId: store.householdId, insightType: 'rebalance_suggestion',
+          delivered: false, createdAt: nowIso,
+          data: { overloaded: overloaded?.name, overMin: max, underloaded: underloaded?.name, underMin: min },
+        });
+      }
+    }
+  }
+
+  // ── Conflict warning from patterns ──
+  if (!alreadyToday('conflict_warning')) {
+    const patterns = await store.patterns();
+    const conflicts = patterns.filter(p => p.patternType === 'pair_conflict' && p.active && p.confidence >= 0.5);
+    for (const c of conflicts) {
+      // Only warn once per pair per week
+      const weekAgo = new Date(now.getTime() - 7 * 86_400_000).toISOString();
+      const alreadyWarned = recentInsights.some(i => i.insightType === 'conflict_warning' && i.createdAt >= weekAgo && (i.data as any).partnerId === c.data.partnerId && i.targetMemberId === c.memberId);
+      if (!alreadyWarned) {
+        insights.push({
+          householdId: store.householdId, insightType: 'conflict_warning',
+          targetMemberId: c.memberId, delivered: false, createdAt: nowIso,
+          data: { partnerId: c.data.partnerId, partnerName: c.data.partnerName, declineCount: c.data.declineCount },
+        });
+      }
+    }
+  }
+
+  // ── Streak alert (quest mode: celebrate streaks) ──
+  if (!alreadyToday('streak_alert')) {
+    if (store.mode === 'quest') {
+      for (const m of members.filter(m => m.role === 'child')) {
+        const doneLast7 = tasks.filter(t => t.assigneeId === m.id && t.status === 'done' && t.doneAt && t2(t.doneAt) > now.getTime() - 7 * 86_400_000);
+        const daysWithDone = new Set(doneLast7.map(t => t.doneAt!.slice(0, 10)));
+        if (daysWithDone.size >= 5) {
+          insights.push({
+            householdId: store.householdId, insightType: 'streak_alert',
+            targetMemberId: m.id, delivered: false, createdAt: nowIso,
+            data: { streakDays: daysWithDone.size, memberName: m.name },
+          });
+        }
+      }
+    }
+  }
+
+  return insights;
+}
+
+/** Format an insight into a human-readable message */
+function formatInsight(ins: Insight, lang: Lang): string | undefined {
+  const d = ins.data as Record<string, any>;
+  switch (ins.insightType) {
+    case 'morning_briefing':
+      return lang === 'ru'
+        ? `☀️ Доброе утро! Сегодня ${d.todayDueCount} дел на сегодня, всего открыто: ${d.openCount}.${d.todayDueTasks?.length ? ' Главные: ' + d.todayDueTasks.join(', ') : ''}`
+        : `☀️ Good morning! ${d.todayDueCount} tasks due today, ${d.openCount} open total.${d.todayDueTasks?.length ? ' Top: ' + d.todayDueTasks.join(', ') : ''}`;
+    case 'overload_warning':
+      return lang === 'ru'
+        ? `⚠️ ${d.memberName} сегодня ${d.openCount}/${d.limit} дел — рядом с лимитом.`
+        : `⚠️ ${d.memberName} has ${d.openCount}/${d.limit} tasks today — near limit.`;
+    case 'rebalance_suggestion':
+      return lang === 'ru'
+        ? `⚖️ На этой неделе дисбаланс: ${d.overloaded} — ${d.overMin} мин, ${d.underloaded} — ${d.underMin} мин. Перераспределить?`
+        : `⚖️ Week imbalance: ${d.overloaded} — ${d.overMin}min, ${d.underloaded} — ${d.underMin}min. Rebalance?`;
+    case 'conflict_warning':
+      return lang === 'ru'
+        ? `🔥 Напряжение между участниками: ${d.declineCount} взаимных отказов с ${d.partnerName}. Стоит обсудить.`
+        : `🔥 Friction detected: ${d.declineCount} mutual declines with ${d.partnerName}. Worth discussing.`;
+    case 'streak_alert':
+      return lang === 'ru'
+        ? `🔥 ${d.memberName} — ${d.streakDays} дней подряд с выполненными заданиями! Отличная серия!`
+        : `🔥 ${d.memberName} — ${d.streakDays}-day streak of completed tasks! Amazing!`;
+    default:
+      return undefined;
+  }
 }
 
 export async function weeklyReport(store: DomovoyStore, refIso: string, lang: 'ru' | 'en' = 'ru') {

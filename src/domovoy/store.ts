@@ -1,4 +1,4 @@
-import type { DispatchRun, Goal, HouseholdMode, Member, OutgoingMessage, Task, TaskEvent } from './types';
+import type { AgentPlan, DispatchRun, Goal, HouseholdMode, Insight, Member, OutgoingMessage, Pattern, Reminder, Task, TaskEvent } from './types';
 
 export interface DomovoyStore {
   /** household this store is scoped to */
@@ -23,6 +23,21 @@ export interface DomovoyStore {
   /** Goals / rewards (gamification) */
   goals(): Promise<Goal[]>;
   saveGoal(g: Goal): Promise<void>;
+
+  // ── Agent Pillars ──
+  /** Pillar 1: Memory & Learning */
+  patterns(memberId?: string): Promise<Pattern[]>;
+  savePattern(p: Pattern): Promise<void>;
+  /** Pillar 2: Multi-step Reasoning */
+  plans(limit?: number): Promise<AgentPlan[]>;
+  savePlan(p: AgentPlan): Promise<void>;
+  /** Pillar 3: Tool Use — reminders */
+  reminders(opts?: { memberId?: string; pending?: boolean }): Promise<Reminder[]>;
+  saveReminder(r: Reminder): Promise<void>;
+  /** Pillar 4: Autonomous Loops — insights */
+  insights(opts?: { delivered?: boolean; limit?: number }): Promise<Insight[]>;
+  saveInsight(i: Insight): Promise<void>;
+  markInsightDelivered(id: number): Promise<void>;
 }
 
 export class InMemoryDomovoyStore implements DomovoyStore {
@@ -34,6 +49,12 @@ export class InMemoryDomovoyStore implements DomovoyStore {
   private _outbox: OutgoingMessage[] = [];
   private _runs: DispatchRun[] = [];
   private _goals: Goal[] = [];
+  private _patterns: Pattern[] = [];
+  private _plans: AgentPlan[] = [];
+  private _reminders: Reminder[] = [];
+  private _insights: Insight[] = [];
+  private _insightSeq = 0;
+  private _patternSeq = 0;
   private _seq = 0;
   constructor(private _members: Member[], opts: { householdId?: string; tz?: string; mode?: HouseholdMode } = {}) {
     this.householdId = opts.householdId ?? 'demo';
@@ -64,5 +85,44 @@ export class InMemoryDomovoyStore implements DomovoyStore {
   async saveGoal(g: Goal) {
     const i = this._goals.findIndex(x => x.id === g.id);
     if (i >= 0) this._goals[i] = g; else this._goals.push(g);
+  }
+
+  // ── Agent Pillars ──
+  async patterns(memberId?: string) {
+    return memberId ? this._patterns.filter(p => p.memberId === memberId) : this._patterns;
+  }
+  async savePattern(p: Pattern) {
+    if (!p.id) p.id = ++this._patternSeq;
+    const i = this._patterns.findIndex(x => x.id === p.id);
+    if (i >= 0) this._patterns[i] = p; else this._patterns.push(p);
+  }
+  async plans(limit = 20) { return this._plans.slice(0, limit); }
+  async savePlan(p: AgentPlan) {
+    const i = this._plans.findIndex(x => x.id === p.id);
+    if (i >= 0) this._plans[i] = p; else this._plans.unshift(p);
+  }
+  async reminders(opts?: { memberId?: string; pending?: boolean }) {
+    let r = this._reminders;
+    if (opts?.memberId) r = r.filter(x => x.memberId === opts.memberId);
+    if (opts?.pending) r = r.filter(x => x.status === 'pending');
+    return r;
+  }
+  async saveReminder(r: Reminder) {
+    const i = this._reminders.findIndex(x => x.id === r.id);
+    if (i >= 0) this._reminders[i] = r; else this._reminders.push(r);
+  }
+  async insights(opts?: { delivered?: boolean; limit?: number }) {
+    let r = this._insights;
+    if (opts?.delivered !== undefined) r = r.filter(x => x.delivered === opts.delivered);
+    return r.slice(0, opts?.limit ?? 100);
+  }
+  async saveInsight(i: Insight) {
+    if (!i.id) i.id = ++this._insightSeq;
+    const idx = this._insights.findIndex(x => x.id === i.id);
+    if (idx >= 0) this._insights[idx] = i; else this._insights.push(i);
+  }
+  async markInsightDelivered(id: number) {
+    const i = this._insights.find(x => x.id === id);
+    if (i) i.delivered = true;
   }
 }

@@ -12,7 +12,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { DomovoyStore } from './store';
-import type { DispatchRun, Goal, Household, Lang, Member, MessageStyle, OutgoingMessage, Task, TaskEvent } from './types';
+import type { AgentPlan, DispatchRun, Goal, Household, Insight, Lang, Member, MessageStyle, OutgoingMessage, Pattern, Reminder, Task, TaskEvent } from './types';
 import type { HouseholdMode } from './types';
 
 type Row = Record<string, any>;
@@ -38,6 +38,30 @@ const goalFromRow = (r: Row): Goal => ({
   id: r.id, householdId: r.household_id, title: r.title, targetMemberId: r.target_member_id,
   type: r.type, threshold: r.threshold, reward: r.reward, progress: r.progress, status: r.status,
   createdAt: r.created_at, updatedAt: r.updated_at,
+});
+
+const patternFromRow = (r: Row): Pattern => ({
+  id: r.id, householdId: r.household_id, memberId: r.member_id, patternType: r.pattern_type,
+  data: r.data, confidence: r.confidence, observedCount: r.observed_count,
+  firstSeen: r.first_seen, lastSeen: r.last_seen, active: r.active,
+});
+
+const planFromRow = (r: Row): AgentPlan => ({
+  id: r.id, householdId: r.household_id, triggerText: r.trigger_text, authorId: r.author_id,
+  steps: r.steps, status: r.status, createdAt: r.created_at,
+  completedAt: r.completed_at ?? undefined, data: r.data,
+});
+
+const reminderFromRow = (r: Row): Reminder => ({
+  id: r.id, householdId: r.household_id, memberId: r.member_id, text: r.text,
+  remindAt: r.remind_at, recurring: r.recurring ?? undefined, status: r.status,
+  createdAt: r.created_at, taskId: r.task_id ?? undefined,
+});
+
+const insightFromRow = (r: Row): Insight => ({
+  id: r.id, householdId: r.household_id, insightType: r.insight_type,
+  targetMemberId: r.target_member_id ?? undefined, data: r.data,
+  delivered: r.delivered, createdAt: r.created_at,
 });
 
 function fail(where: string, error: { message: string } | null) { if (error) throw new Error(`${where}: ${error.message}`); }
@@ -145,6 +169,83 @@ export class SupabaseDomovoyStore implements DomovoyStore {
       updated_at: new Date().toISOString(),
     });
     fail('saveGoal', error);
+  }
+
+  // ── Pillar 1: Memory & Learning — dm_patterns ──
+  async patterns(memberId?: string) {
+    let q = this.sb.from('dm_patterns').select('*').eq('household_id', this.householdId);
+    if (memberId) q = q.eq('member_id', memberId);
+    const { data, error } = await q.order('id');
+    fail('patterns', error);
+    return (data ?? []).map(patternFromRow);
+  }
+  async savePattern(p: Pattern) {
+    const row: Row = {
+      household_id: this.householdId, member_id: p.memberId, pattern_type: p.patternType,
+      data: p.data, confidence: p.confidence, observed_count: p.observedCount,
+      first_seen: p.firstSeen, last_seen: p.lastSeen, active: p.active,
+    };
+    if (p.id) row.id = p.id;
+    const { data, error } = await this.sb.from('dm_patterns').upsert(row).select('id').single();
+    fail('savePattern', error);
+    if (!p.id && data) p.id = data.id;
+  }
+
+  // ── Pillar 2: Multi-step Reasoning — dm_agent_plans ──
+  async plans(limit = 20) {
+    const { data, error } = await this.sb.from('dm_agent_plans').select('*').eq('household_id', this.householdId).order('created_at', { ascending: false }).limit(limit);
+    fail('plans', error);
+    return (data ?? []).map(planFromRow);
+  }
+  async savePlan(p: AgentPlan) {
+    const { error } = await this.sb.from('dm_agent_plans').upsert({
+      id: p.id, household_id: this.householdId, trigger_text: p.triggerText, author_id: p.authorId,
+      steps: p.steps, status: p.status, created_at: p.createdAt,
+      completed_at: p.completedAt ?? null, data: p.data,
+    });
+    fail('savePlan', error);
+  }
+
+  // ── Pillar 3: Tool Use — dm_reminders ──
+  async reminders(opts?: { memberId?: string; pending?: boolean }) {
+    let q = this.sb.from('dm_reminders').select('*').eq('household_id', this.householdId);
+    if (opts?.memberId) q = q.eq('member_id', opts.memberId);
+    if (opts?.pending) q = q.eq('status', 'pending');
+    const { data, error } = await q.order('remind_at');
+    fail('reminders', error);
+    return (data ?? []).map(reminderFromRow);
+  }
+  async saveReminder(r: Reminder) {
+    const { error } = await this.sb.from('dm_reminders').upsert({
+      id: r.id, household_id: this.householdId, member_id: r.memberId, text: r.text,
+      remind_at: r.remindAt, recurring: r.recurring ?? null, status: r.status,
+      created_at: r.createdAt, task_id: r.taskId ?? null,
+    });
+    fail('saveReminder', error);
+  }
+
+  // ── Pillar 4: Autonomous Loops — dm_insights ──
+  async insights(opts?: { delivered?: boolean; limit?: number }) {
+    let q = this.sb.from('dm_insights').select('*').eq('household_id', this.householdId);
+    if (opts?.delivered !== undefined) q = q.eq('delivered', opts.delivered);
+    const { data, error } = await q.order('id', { ascending: false }).limit(opts?.limit ?? 100);
+    fail('insights', error);
+    return (data ?? []).map(insightFromRow);
+  }
+  async saveInsight(i: Insight) {
+    const row: Row = {
+      household_id: this.householdId, insight_type: i.insightType,
+      target_member_id: i.targetMemberId ?? null, data: i.data,
+      delivered: i.delivered, created_at: i.createdAt,
+    };
+    if (i.id) row.id = i.id;
+    const { data, error } = await this.sb.from('dm_insights').upsert(row).select('id').single();
+    fail('saveInsight', error);
+    if (!i.id && data) i.id = data.id;
+  }
+  async markInsightDelivered(id: number) {
+    const { error } = await this.sb.from('dm_insights').update({ delivered: true }).eq('id', id);
+    fail('markInsightDelivered', error);
   }
 }
 
