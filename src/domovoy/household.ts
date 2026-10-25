@@ -207,6 +207,31 @@ export async function tick(store: DomovoyStore, nowIso: string) {
     await store.event({ at: nowIso, taskId: t.id, actor: 'agent', type: 'reminded', details: { level: u.level } });
   }
   for (const m of messages) { await store.send(m); sent.push({ kind: 'reminder', toId: m.toId, text: m.text }); }
+
+  // P2.4 Goal difficulty auto-adjustment: if progress/threshold < 0.5 with ≤2 days to deadline → suggest lowering
+  const goals = await store.goals();
+  const TWO_DAYS_MS = 2 * 86_400_000;
+  for (const g of goals) {
+    if (g.status !== 'active' || g.type !== 'deadline') continue;
+    const deadlineMs = new Date(g.updatedAt).getTime() + g.threshold * 86_400_000; // threshold = days for deadline goals
+    const remaining = deadlineMs - now;
+    if (remaining > TWO_DAYS_MS || remaining <= 0) continue;
+    if (g.threshold === 0 || g.progress / g.threshold >= 0.5) continue;
+    // Already warned? Check events for this goal
+    const warned = (await store.events()).some(e => e.type === 'info' as string && e.details?.goalId === g.id && e.details?.kind === 'difficulty_warning');
+    if (warned) continue;
+    const admins = members.filter(m => m.isAdmin);
+    const target = byId.get(g.targetMemberId);
+    for (const admin of admins) {
+      await store.send({ at: nowIso, toId: admin.id, lang: admin.lang, kind: 'info',
+        text: say(admin.lang,
+          `⚠️ Цель «${g.title}» для ${target?.name ?? '?'}: прогресс ${g.progress}/${g.threshold} — может быть слишком сложно. Снизить порог или продлить?`,
+          `⚠️ Goal "${g.title}" for ${target?.name ?? '?'}: progress ${g.progress}/${g.threshold} — may be too hard. Lower the target or extend?`) });
+      sent.push({ kind: 'goal_warning', toId: admin.id, text: g.title });
+    }
+    await store.event({ at: nowIso, taskId: g.id, actor: 'agent', type: 'info' as any, details: { goalId: g.id, kind: 'difficulty_warning' } });
+  }
+
   return sent;
 }
 

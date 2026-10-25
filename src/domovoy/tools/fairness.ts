@@ -2,13 +2,29 @@ import type { Member, Task } from '../types';
 
 export interface FairnessRow { memberId: string; name: string; role: string; minutes: number; tasks: number; points: number }
 
+/** Anti-farming: tasks shorter than this earn no points. / Антифарминг: задачи короче этого не дают очков. */
+export const MIN_MINUTES_FOR_POINTS = 5;
+/** Anti-farming: max points a child can earn per calendar day. / Максимум очков ребёнка в день. */
+export const DAILY_POINTS_CAP = 50;
+
 /** Minutes of done tasks per member in the ISO week containing `ref`. */
 export function weeklyLedger(members: Member[], tasks: Task[], refIso: string): FairnessRow[] {
   const { start, end } = weekBounds(refIso);
   return members.map(m => {
     const done = tasks.filter(t => t.assigneeId === m.id && t.status === 'done' && t.doneAt && t.doneAt >= start && t.doneAt < end);
     const minutes = done.reduce((s, t) => s + t.minutes, 0);
-    return { memberId: m.id, name: m.name, role: m.role, minutes, tasks: done.length, points: m.role === 'child' ? done.length * 10 : 0 };
+    let points = 0;
+    if (m.role === 'child') {
+      // Group qualifying tasks by day, cap each day at DAILY_POINTS_CAP
+      const byDay: Record<string, number> = {};
+      for (const t of done) {
+        if (t.minutes < MIN_MINUTES_FOR_POINTS) continue; // anti-farming: skip trivial tasks
+        const day = (t.doneAt ?? t.createdAt).slice(0, 10);
+        byDay[day] = Math.min((byDay[day] ?? 0) + 10, DAILY_POINTS_CAP);
+      }
+      points = Object.values(byDay).reduce((s, v) => s + v, 0);
+    }
+    return { memberId: m.id, name: m.name, role: m.role, minutes, tasks: done.length, points };
   });
 }
 

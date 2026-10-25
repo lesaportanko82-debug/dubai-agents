@@ -234,6 +234,121 @@ test('tasks that need proof stay open until a photo arrives', async () => {
   assert.equal(r2.task.proofUrl, 'photos/q5.jpg');
 });
 
+// ---------- P2: Anti-farming, duplicate detection, mutual assignment, goal auto-adjust ----------
+import { MIN_MINUTES_FOR_POINTS, DAILY_POINTS_CAP } from '../src/domovoy/tools/fairness';
+import type { Goal } from '../src/domovoy/types';
+
+test('P2.1 anti-farming: tasks < 5 min earn no points; daily cap is 50', async () => {
+  const store = new InMemoryDomovoyStore(DEMO_FAMILY);
+  const day = NOW.slice(0, 10);
+  // Create 7 tasks for son, some < 5 min
+  const tasks = [
+    mkTask({ id: 'af1', assigneeId: 'son', status: 'assigned', minutes: 3, kidSafe: true, candidateIds: ['son'] }),  // < 5min: no points
+    mkTask({ id: 'af2', assigneeId: 'son', status: 'assigned', minutes: 10, kidSafe: true, candidateIds: ['son'] }), // 10 pts
+    mkTask({ id: 'af3', assigneeId: 'son', status: 'assigned', minutes: 5, kidSafe: true, candidateIds: ['son'] }),  // 10 pts
+    mkTask({ id: 'af4', assigneeId: 'son', status: 'assigned', minutes: 15, kidSafe: true, candidateIds: ['son'] }), // 10 pts
+    mkTask({ id: 'af5', assigneeId: 'son', status: 'assigned', minutes: 10, kidSafe: true, candidateIds: ['son'] }), // 10 pts
+    mkTask({ id: 'af6', assigneeId: 'son', status: 'assigned', minutes: 10, kidSafe: true, candidateIds: ['son'] }), // 10 pts → total 50 → cap
+    mkTask({ id: 'af7', assigneeId: 'son', status: 'assigned', minutes: 10, kidSafe: true, candidateIds: ['son'] }), // would be 60 but capped at 50
+  ];
+  for (const t of tasks) { await store.saveTask(t); await markDone(store, t.id, 'son', NOW); }
+  const rows = weeklyLedger(await store.members(), await store.tasks(), NOW);
+  const son = rows.find(r => r.memberId === 'son')!;
+  assert.equal(son.points, DAILY_POINTS_CAP); // capped at 50, and af1 (3 min) earned nothing
+  assert.equal(son.tasks, 7); // all 7 tasks counted for minutes
+  assert.equal(MIN_MINUTES_FOR_POINTS, 5);
+});
+
+test('P2.1 anti-farming: child self-tasks in quest mode → auto needsProof', async () => {
+  const store = new InMemoryDomovoyStore(DEMO_FAMILY.map(m => ({ ...m, busy: [] })), { mode: 'quest' });
+  const client = scripted([
+    { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'c1', name: 'get_family', input: {} }] },
+    { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'c2', name: 'propose_tasks', input: { tasks: [
+      { text: 'Полить цветы', minutes: 10, skills: ['water_plants'], kid_safe: true },
+    ] } }] },
+    { stop_reason: 'end_turn', content: [{ type: 'text', text: 'done' }] },
+  ]);
+  const res = await runDispatch(client, store, 'son', 'Хочу полить цветы', { now: NOW, mode: 'quest' });
+  assert.equal(res.tasks[0].needsProof, true);
+});
+
+test('P2.2 duplicate detection: warns when similar active task exists', async () => {
+  const store = new InMemoryDomovoyStore(DEMO_FAMILY.map(m => ({ ...m, busy: [] })));
+  // Pre-create a task
+  const existing = mkTask({ id: 'dup1', text: 'Купить молоко', skills: ['shop'], status: 'assigned', assigneeId: 'joy', createdAt: NOW });
+  await store.saveTask(existing);
+  const client = scripted([
+    { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'c1', name: 'get_family', input: {} }] },
+    { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'c2', name: 'propose_tasks', input: { tasks: [
+      { text: 'Купить молоко', minutes: 20, skills: ['shop'], kid_safe: false },
+    ] } }] },
+    { stop_reason: 'end_turn', content: [{ type: 'text', text: 'duplicate noted' }] },
+  ]);
+  const res = await runDispatch(client, store, 'mum', 'Купить молоко', { now: NOW });
+  // The propose_tasks result should contain a duplicate_warning
+  const proposeResult = res.trace.find(s => s.tool === 'propose_tasks')!.output as any;
+  assert.ok(proposeResult.tasks[0].duplicate_warning);
+  assert.match(proposeResult.tasks[0].duplicate_warning, /Similar active task/);
+});
+
+test('P2.3 mutual assignment: warns both when A→B and B→A within 5 min', async () => {
+  const store = new InMemoryDomovoyStore(DEMO_FAMILY.map(m => ({ ...m, busy: [] })));
+  // First: dad assigns a task to mum (simulate with direct save)
+  const t1 = mkTask({ id: 'mut1', authorId: 'dad', assigneeId: 'mum', assignedAt: NOW, status: 'assigned', skills: ['cook'], candidateIds: ['mum'] });
+  await store.saveTask(t1);
+  // Now mum dispatches and assigns to dad within 5 min
+  const twoMinLater = new Date(new Date(NOW).getTime() + 2 * 60_000).toISOString();
+  let assignedTaskId = '';
+  const client = scripted([
+    { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'c1', name: 'get_family', input: {} }] },
+    { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'c2', name: 'propose_tasks', input: { tasks: [
+      { text: 'Починить кран', minutes: 30, skills: ['repair'], kid_safe: false },
+    ] } }] },
+    { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'c3', name: 'assign', input: { task_id: 'PLACEHOLDER', member_id: 'dad', reason: 'he can repair', message: 'Алексей, почини кран' } }] },
+    { stop_reason: 'end_turn', content: [{ type: 'text', text: 'done' }] },
+  ]);
+  let ids: string[] = [];
+  const wrapped: ModelClient = { create: async req => {
+    const res = await client.create(req);
+    const last = req.messages[req.messages.length - 1] as any;
+    if (Array.isArray(last?.content)) for (const b of last.content) if (b.type === 'tool_result') { try { const j = JSON.parse(b.content); if (j.tasks) ids = j.tasks.map((t: any) => t.task_id); } catch {} }
+    for (const b of res.content) if (b.type === 'tool_use' && (b.input as any).task_id === 'PLACEHOLDER') (b.input as any).task_id = ids[0];
+    return res;
+  } };
+  const res = await runDispatch(wrapped, store, 'mum', 'Алексей, почини кран', { now: twoMinLater });
+  // Check that mutual assignment warning messages were sent
+  const outbox = await store.outbox();
+  const mutualMsgs = outbox.filter(m => /назначили дела друг другу|assigned tasks to each other/.test(m.text));
+  assert.ok(mutualMsgs.length >= 2, 'both parties should get a mutual assignment warning');
+  // The assign result should have the warning flag
+  const assignResult = res.trace.find(s => s.tool === 'assign')?.output as any;
+  assert.equal(assignResult?.mutual_assignment_warning, true);
+});
+
+test('P2.4 goal difficulty auto-adjustment: warns admin when goal progress < 50% with 2 days left', async () => {
+  const store = new InMemoryDomovoyStore(DEMO_FAMILY);
+  const twoDaysFromNow = new Date(new Date(NOW).getTime() + 1.5 * 86_400_000).toISOString(); // 1.5 days → within 2-day window
+  const goal: Goal = {
+    id: 'g1', householdId: 'demo', title: 'Полить цветы 10 раз', targetMemberId: 'son',
+    type: 'deadline', threshold: 10, reward: 'Поход в кино', progress: 3, // 3/10 = 30% < 50%
+    status: 'active', createdAt: NOW,
+    updatedAt: NOW, // threshold for deadline = days, so deadline = updatedAt + threshold * 86400000
+  };
+  await store.saveGoal(goal);
+
+  // Tick at a point where deadline is within 2 days
+  // deadline = NOW + 10 days. We need to tick close to the deadline.
+  const nearDeadline = new Date(new Date(NOW).getTime() + 8.5 * 86_400_000).toISOString(); // 1.5 days before deadline
+  const sent = await tick(store, nearDeadline);
+  assert.ok(sent.some(s => s.kind === 'goal_warning'));
+  const outbox = await store.outbox();
+  assert.ok(outbox.some(m => /Цель|Goal/.test(m.text) && /слишком сложно|too hard/.test(m.text)));
+
+  // Second tick should NOT warn again (already warned)
+  const sent2 = await tick(store, nearDeadline);
+  assert.ok(!sent2.some(s => s.kind === 'goal_warning'), 'should not warn twice');
+});
+
 // ---------- Telegram channel ----------
 import { handleUpdate, parseReply, type TgSender, type TgUpdate } from '../src/domovoy/telegram';
 

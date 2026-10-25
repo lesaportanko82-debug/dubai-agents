@@ -5,7 +5,7 @@ import { redact } from '../owed/redact';
 import { defaultModel } from '../owed/llm';
 import { buildDispatchSystem } from './prompts';
 import type { DomovoyStore } from './store';
-import type { Task } from './types';
+import type { Lang, Task } from './types';
 import { rankCandidates } from './tools/assign';
 import { assignTask, buildContext } from './household';
 import { KID_SKILLS } from './fixtures';
@@ -126,24 +126,59 @@ export async function runDispatch(client: ModelClient, store: DomovoyStore, auth
       ctx.existingTasks = allTasks;
       const out = [];
       for (const p of tasks) {
+        // P2.1 Anti-farming: child self-tasks in quest mode → auto needsProof
+        let needsProof = p.needs_proof;
+        let childToChild = false;
+        if (author!.role === 'child') {
+          // quest mode: child creating tasks for themselves → require photo proof
+          if ((opts.mode ?? 'classic') === 'quest') needsProof = true;
+          // child→child: mark for adult confirmation warning
+          // (we detect after ranking; flag it now)
+          childToChild = true;
+        }
+
         const t: Task = {
           id: 't-' + randomUUID().slice(0, 8), authorId, text: redact(p.text).text, dueAt: p.due_at, place: p.place, minutes: p.minutes, skills: p.skills,
           kidSafe: p.kid_safe, recurring: p.recurring, candidateIds: [], declinedBy: [], status: 'new', reminderLevel: 0, createdAt: now,
-          urgent: p.urgent, aboutMemberId: p.about_member_id, needsProof: p.needs_proof,
+          urgent: p.urgent, aboutMemberId: p.about_member_id, needsProof,
           private: p.private || !!p.about_member_id || undefined,
         };
+
+        // P2.2 Duplicate detection: warn if a similar active task exists in last 24h
+        const dayAgo = new Date(new Date(now).getTime() - 86_400_000).toISOString();
+        const similar = allTasks.filter(x =>
+          x.id !== t.id &&
+          !['done', 'cancelled'].includes(x.status) &&
+          x.createdAt >= dayAgo &&
+          (x.text.toLowerCase() === t.text.toLowerCase() || (t.skills.length > 0 && t.skills.every(s => x.skills.includes(s)) && x.skills.every(s => t.skills.includes(s))))
+        );
+
         const { allowed, blocked } = rankCandidates(members, t, ctx);
         t.candidateIds = allowed.map(c => c.memberId);
+
+        // P2.1: child→child assignments → auto needsProof, flag for adult confirmation
+        let needsAdultConfirm = false;
+        if (childToChild) {
+          const childCandidates = allowed.filter(c => members.find(x => x.id === c.memberId)?.role === 'child');
+          if (childCandidates.length > 0) {
+            t.needsProof = true;
+            needsAdultConfirm = true;
+          }
+        }
+
         await store.saveTask(t);
         await store.event({ at: now, taskId: t.id, actor: authorId, type: 'created', details: { text: t.text } });
         for (const b of blocked) await store.event({ at: now, taskId: t.id, actor: 'agent', type: 'blocked', details: b });
         created.push(t);
-        out.push({ task_id: t.id, text: t.text, allowed: allowed.map(c => {
-          const mem = members.find(x => x.id === c.memberId)!;
-          const open = ctx.openToday[c.memberId] ?? 0;
-          const nearLimit = open >= mem.dailyLimit - 1;
-          return { member_id: c.memberId, score: c.score, why: c.reasons, ...(nearLimit ? { near_limit: true, open_today: open, daily_limit: mem.dailyLimit } : {}) };
-        }), blocked });
+        out.push({ task_id: t.id, text: t.text,
+          ...(similar.length ? { duplicate_warning: `Similar active task(s) exist: ${similar.map(s => `"${s.text}" (${s.status})`).join(', ')}. Consider skipping.` } : {}),
+          ...(needsAdultConfirm ? { needs_adult_confirm: true, note: 'Child→child task: requires adult confirmation before closing. Photo proof auto-enabled.' } : {}),
+          allowed: allowed.map(c => {
+            const mem = members.find(x => x.id === c.memberId)!;
+            const open = ctx.openToday[c.memberId] ?? 0;
+            const nearLimit = open >= mem.dailyLimit - 1;
+            return { member_id: c.memberId, score: c.score, why: c.reasons, ...(nearLimit ? { near_limit: true, open_today: open, daily_limit: mem.dailyLimit } : {}) };
+          }), blocked });
       }
       return { tasks: out };
     }
@@ -154,7 +189,27 @@ export async function runDispatch(client: ModelClient, store: DomovoyStore, auth
       if (t.assigneeId) throw new Error('task already assigned');
       await assignTask(store, t, a.member_id, a.reason, now, redact(a.message).text);
       const m = members.find(x => x.id === a.member_id)!;
-      return { ok: true, task_id: t.id, assigned_to: m.name, lang: m.lang };
+
+      // P2.3 Mutual assignment detection: if B assigned a task to A within 5 min, warn both
+      const fiveAgo = new Date(new Date(now).getTime() - 5 * 60_000).toISOString();
+      const allTasks = await store.tasks();
+      const mutual = allTasks.find(x =>
+        x.id !== t.id &&
+        x.authorId === a.member_id &&
+        x.assigneeId === authorId &&
+        x.assignedAt && x.assignedAt >= fiveAgo &&
+        ['assigned', 'accepted'].includes(x.status)
+      );
+      if (mutual) {
+        const authorMem = members.find(x => x.id === authorId)!;
+        const mutualMsg = (lang: Lang) => lang === 'ru'
+          ? `🔄 Вы с ${authorMem.id === authorId ? m.name : authorMem.name} назначили дела друг другу. Договоритесь, кто что делает.`
+          : `🔄 You and ${authorMem.id === authorId ? m.name : authorMem.name} assigned tasks to each other. Agree who does what.`;
+        await store.send({ at: now, toId: authorId, lang: authorMem.lang, kind: 'info', text: mutualMsg(authorMem.lang) });
+        await store.send({ at: now, toId: a.member_id, lang: m.lang, kind: 'info', text: mutualMsg(m.lang) });
+      }
+
+      return { ok: true, task_id: t.id, assigned_to: m.name, lang: m.lang, ...(mutual ? { mutual_assignment_warning: true } : {}) };
     }
     throw new Error(`Unknown tool ${name}`);
   }
