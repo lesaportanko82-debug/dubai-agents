@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { panelContext } from '@/lib/domovoy-server';
 import { getLang } from '@/lib/lang';
 import { PageTitle, Panel, Pill } from '@/components/ui';
@@ -9,9 +10,16 @@ import { reasonText } from '@/lib/reasons';
 export const dynamic = 'force-dynamic';
 
 export default async function DomovoyHome() {
+  const ctx = await panelContext();
+
+  // If using Supabase but no valid session → redirect to login
+  if (ctx.isDemo === false && !ctx.member) {
+    redirect('/login/domovoy');
+  }
+
   const lang = await getLang();
   const ru = lang === 'ru';
-  const { store, runs } = await panelContext();
+  const { store, runs, household, member } = ctx;
   const [members, tasks, events] = await Promise.all([store.members(), store.tasks(), store.events()]);
   const today = new Date().toISOString().slice(0, 10);
   const todays = tasks.filter(t => (t.dueAt ?? t.createdAt).slice(0, 10) === today).sort((a, b) => (a.dueAt ?? '').localeCompare(b.dueAt ?? ''));
@@ -34,6 +42,21 @@ export default async function DomovoyHome() {
 
   return (
     <>
+      {/* Welcome banner for authenticated users */}
+      {member && household && (
+        <div className="mb-5 rounded-lg bg-amber-50 border border-amber-200 px-5 py-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <span className="text-[15px] font-medium">{ru ? `Привет, ${member.name}!` : `Hi, ${member.name}!`}</span>
+            <span className="text-[14px] text-stone-500 ml-2">{household.name}</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-[13px] text-stone-500">
+              {ru ? `${members.length} человек в семье` : `${members.length} family members`}
+            </span>
+          </div>
+        </div>
+      )}
+
       <PageTitle
         title={ru ? 'Сегодня в доме' : 'Today at home'}
         lead={ru ? 'Кто что делает и когда. Напоминает Домовёнок, а не мама.' : 'Who is doing what, and when. Domovoy does the reminding, not mum.'}
@@ -89,6 +112,33 @@ export default async function DomovoyHome() {
           ))}
         </div>
       </Panel>
+
+      {/* Family members quick view */}
+      {members.length > 0 && (
+        <Panel title={ru ? 'Семья' : 'Family'} className="mb-5" aside={<Link href="/domovoy/family" className="text-[13px] underline underline-offset-2 text-ink-soft">{ru ? 'Подробнее' : 'Details'}</Link>}>
+          <div className="px-5 pb-5 flex flex-wrap gap-4">
+            {members.map(m => {
+              const memberTasks = todays.filter(t => t.assigneeId === m.id);
+              const doneCnt = memberTasks.filter(t => t.status === 'done').length;
+              const openCnt = memberTasks.filter(t => ['assigned', 'accepted'].includes(t.status)).length;
+              return (
+                <div key={m.id} className="flex items-center gap-3 min-w-[180px]">
+                  <Avatar m={m} size={36} />
+                  <div>
+                    <div className="text-[14px] font-medium">{m.name}</div>
+                    <div className="text-[12px] text-stone-500">
+                      {openCnt > 0 && <span>{openCnt} {ru ? 'в работе' : 'active'}</span>}
+                      {openCnt > 0 && doneCnt > 0 && ' · '}
+                      {doneCnt > 0 && <span>{doneCnt} {ru ? 'сделано' : 'done'}</span>}
+                      {openCnt === 0 && doneCnt === 0 && <span className="text-stone-400">{ru ? 'свободен' : 'free'}</span>}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Panel>
+      )}
 
       <div className="grid md:grid-cols-2 gap-5">
         <Panel title={ru ? 'Последнее решение Домовёнка' : 'Domovoy’s latest decision'}>

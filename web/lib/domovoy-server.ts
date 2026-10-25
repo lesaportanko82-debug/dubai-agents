@@ -82,6 +82,9 @@ export async function panelContext(): Promise<PanelContext> {
           return { store, household: session.household, member: session.member, isDemo: false, runs: [] };
         }
       }
+      // Supabase configured but no valid session — return a "not authenticated" context
+      // so pages can detect this and redirect to login
+      return { store: domovoyState().store, isDemo: false, runs: [] };
     } catch { /* cookies() may throw in some contexts — fall through to demo */ }
   }
   const state = domovoyState();

@@ -66,6 +66,7 @@ export interface Household {
   tz: string;
   lang: Lang;
   inviteCode: string;
+  pin: string;
 }
 
 export interface OutgoingMessage {

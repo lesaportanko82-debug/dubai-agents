@@ -27,7 +27,7 @@ const memberToRow = (householdId: string, m: Member): Row => ({
   telegram_chat_id: m.telegramId ?? null, skills: m.skills, day_off: m.dayOff ?? [], work_from: m.workHours?.from ?? null, work_to: m.workHours?.to ?? null,
   busy: m.busy ?? [], daily_limit: m.dailyLimit, is_admin: !!m.isAdmin,
 });
-const householdFromRow = (r: Row): Household => ({ id: r.id, name: r.name, tz: r.tz, lang: r.lang, inviteCode: r.invite_code });
+const householdFromRow = (r: Row): Household => ({ id: r.id, name: r.name, tz: r.tz, lang: r.lang, inviteCode: r.invite_code, pin: r.pin ?? '' });
 
 function fail(where: string, error: { message: string } | null) { if (error) throw new Error(`${where}: ${error.message}`); }
 
@@ -140,6 +140,10 @@ export class DomovoyDb {
   }
   async householdByInvite(code: string): Promise<Household | undefined> {
     const { data } = await this.sb.from('dm_households').select('*').eq('invite_code', code).maybeSingle();
+    return data ? householdFromRow(data) : undefined;
+  }
+  async householdByPin(pin: string): Promise<Household | undefined> {
+    const { data } = await this.sb.from('dm_households').select('*').eq('pin', pin).maybeSingle();
     return data ? householdFromRow(data) : undefined;
   }
   async allHouseholds(): Promise<Household[]> {
