@@ -1,27 +1,56 @@
 /**
- * Server-side Domovoy state for the panel: in-memory demo family with a seeded week,
- * so the board, fairness and decisions screens have content before the first live run.
+ * Server-side Domovoy state for the panel.
+ *
+ * Two modes:
+ *  - Demo (no SUPABASE_URL): in-memory store seeded with a fake family + tasks.
+ *  - Supabase: multi-household persistence, DomovoyDb resolves chat→household.
  */
 import { InMemoryDomovoyStore } from '@core/domovoy/store';
 import { DEMO_FAMILY } from '@core/domovoy/fixtures';
+import type { DomovoyStore } from '@core/domovoy/store';
 import type { Task } from '@core/domovoy/types';
 import type { DispatchResult } from '@core/domovoy/agent';
+import { DomovoyDb } from '@core/domovoy/supabase-store';
+import { loadRootEnv } from './env';
 
 export interface DomovoyRun { id: string; at: string; authorId: string; input: string; result: DispatchResult }
-interface State { store: InMemoryDomovoyStore; runs: DomovoyRun[]; seenUpdates: Set<number>; lastTick?: number }
+
+// ---------- Demo (in-memory) state ----------
+interface DemoState { store: InMemoryDomovoyStore; runs: DomovoyRun[]; lastTick?: number }
 
 declare global {
   // eslint-disable-next-line no-var
-  var __domovoyState: State | undefined;
+  var __domovoyState: DemoState | undefined;
+  // eslint-disable-next-line no-var
+  var __domovoyDb: DomovoyDb | undefined;
 }
 
-export function domovoyState(): State {
+export function domovoyState(): DemoState {
   if (!globalThis.__domovoyState) {
     const store = new InMemoryDomovoyStore(DEMO_FAMILY.map(m => ({ ...m, busy: [...m.busy] })));
     seed(store);
-    globalThis.__domovoyState = { store, runs: [], seenUpdates: new Set() };
+    globalThis.__domovoyState = { store, runs: [] };
   }
   return globalThis.__domovoyState;
+}
+
+/** Resolve the correct store for a panel request. `householdId` comes from magic-link token or query. */
+export async function resolveStore(householdId?: string): Promise<DomovoyStore> {
+  const db = getDomovoyDb();
+  if (db && householdId) {
+    const h = await db.household(householdId);
+    if (h) return db.store(h);
+  }
+  // fallback to demo
+  return domovoyState().store;
+}
+
+export function getDomovoyDb(): DomovoyDb | undefined {
+  if (!globalThis.__domovoyDb) {
+    loadRootEnv();
+    globalThis.__domovoyDb = DomovoyDb.fromEnv();
+  }
+  return globalThis.__domovoyDb;
 }
 
 /** "Now" for the demo is anchored to the current week so the ledger always looks current. */

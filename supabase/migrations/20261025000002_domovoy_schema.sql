@@ -1,0 +1,18 @@
+-- Domovoy: multi-household schema (applied to project "domovoy", 2026-10-25).
+-- All tables are closed to anon/authenticated (RLS on, no policies); the server uses the secret key.
+create extension if not exists pgcrypto;
+create table if not exists dm_households (id uuid primary key default gen_random_uuid(), name text not null, tz text not null default 'Asia/Dubai', lang text not null default 'ru', invite_code text not null unique default encode(gen_random_bytes(6), 'hex'), created_at timestamptz not null default now());
+create table if not exists dm_members (id text primary key, household_id uuid not null references dm_households(id) on delete cascade, name text not null, role text not null check (role in ('adult','child','elder','helper')), age int, lang text not null default 'ru', telegram_chat_id text unique, skills text[] not null default '{}', day_off int[] not null default '{}', work_from text, work_to text, busy jsonb not null default '[]', daily_limit int not null default 3, is_admin boolean not null default false, created_at timestamptz not null default now());
+create index if not exists dm_members_household on dm_members(household_id);
+create table if not exists dm_tasks (id text primary key, household_id uuid not null references dm_households(id) on delete cascade, status text not null, assignee_id text, due_at timestamptz, created_at timestamptz not null default now(), data jsonb not null);
+create index if not exists dm_tasks_household on dm_tasks(household_id, status);
+create table if not exists dm_events (id bigserial primary key, household_id uuid not null references dm_households(id) on delete cascade, at timestamptz not null, task_id text not null, actor text not null, type text not null, details jsonb);
+create index if not exists dm_events_household on dm_events(household_id, at);
+create table if not exists dm_outbox (id bigserial primary key, household_id uuid not null references dm_households(id) on delete cascade, at timestamptz not null, to_member text not null, lang text not null, text text not null, kind text not null, task_id text, delivered_at timestamptz);
+create index if not exists dm_outbox_pending on dm_outbox(household_id) where delivered_at is null;
+create table if not exists dm_runs (id uuid primary key default gen_random_uuid(), household_id uuid not null references dm_households(id) on delete cascade, at timestamptz not null default now(), author_id text not null, input text not null, result jsonb not null);
+create index if not exists dm_runs_household on dm_runs(household_id, at desc);
+create table if not exists dm_tg_sessions (chat_id text primary key, household_id uuid references dm_households(id) on delete set null, member_id text, state jsonb not null default '{}', updated_at timestamptz not null default now());
+create table if not exists dm_tg_updates (update_id bigint primary key, seen_at timestamptz not null default now());
+create table if not exists dm_panel_sessions (token text primary key, household_id uuid not null references dm_households(id) on delete cascade, member_id text not null, created_at timestamptz not null default now(), expires_at timestamptz not null);
+alter table dm_households enable row level security; alter table dm_members enable row level security; alter table dm_tasks enable row level security; alter table dm_events enable row level security; alter table dm_outbox enable row level security; alter table dm_runs enable row level security; alter table dm_tg_sessions enable row level security; alter table dm_tg_updates enable row level security; alter table dm_panel_sessions enable row level security;

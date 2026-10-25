@@ -60,13 +60,32 @@ export interface TaskEvent {
   details?: Record<string, unknown>;
 }
 
+export interface Household {
+  id: string;
+  name: string;
+  tz: string;
+  lang: Lang;
+  inviteCode: string;
+}
+
 export interface OutgoingMessage {
+  /** storage id (set by the store); used to mark delivery */
+  id?: string | number;
   at: string;
   toId: string;
   lang: Lang;
   text: string;
   kind: 'assignment' | 'reminder' | 'swap' | 'report' | 'info';
   taskId?: string;
+}
+
+export interface DispatchRun {
+  id: string;
+  at: string;
+  authorId: string;
+  input: string;
+  /** DispatchResult (summary, tasks, trace, redactions) — kept loose to avoid a cycle */
+  result: { summary: string; tasks: Task[]; trace: unknown[]; redactions: number };
 }
 
 export interface Candidate {

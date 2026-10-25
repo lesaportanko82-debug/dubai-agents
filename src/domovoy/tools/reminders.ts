@@ -31,7 +31,7 @@ const TEXT: Record<Lang, Record<'gentle' | 'humorous' | 'board', (t: string, n: 
 /**
  * Given the clock, returns reminders due now for open tasks and the new reminder level per task.
  */
-export function dueReminders(tasks: Task[], members: Member[], nowIso: string): { messages: OutgoingMessage[]; updates: { taskId: string; level: 1 | 2 | 3 }[] } {
+export function dueReminders(tasks: Task[], members: Member[], nowIso: string, _tz = 'Asia/Dubai'): { messages: OutgoingMessage[]; updates: { taskId: string; level: 1 | 2 | 3 }[] } {
   const now = new Date(nowIso).getTime();
   const byId = new Map(members.map(m => [m.id, m]));
   const messages: OutgoingMessage[] = [];

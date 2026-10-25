@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { createHash } from 'node:crypto';
-import { domovoyState } from '@/lib/domovoy-server';
+import { domovoyState, getDomovoyDb } from '@/lib/domovoy-server';
 import { loadRootEnv } from '@/lib/env';
-import { handleUpdate, telegramSender, tickAndFlush, type TgUpdate } from '@core/domovoy/telegram';
+import { handleUpdate, telegramSender, tickAndFlush, flushOutbox, type TgUpdate } from '@core/domovoy/telegram';
+import { tick } from '@core/domovoy/household';
 import { getModelClient } from '@core/owed/llm';
 
 export const dynamic = 'force-dynamic';
@@ -14,21 +15,81 @@ function token() { loadRootEnv(); return process.env.DOMOVOY_TELEGRAM_TOKEN?.tri
 /** Webhook secret derived from the token: nothing extra to configure. */
 const secretFor = (tok: string) => createHash('sha256').update(tok).digest('hex').slice(0, 32);
 
+// Global tick timestamp (shared across requests in the same serverless instance)
+let lastTick = 0;
+
 export async function POST(req: Request) {
   const tok = token();
   if (!tok) return NextResponse.json({ error: 'DOMOVOY_TELEGRAM_TOKEN is not set' }, { status: 500 });
   if (req.headers.get('x-telegram-bot-api-secret-token') !== secretFor(tok)) return NextResponse.json({ error: 'forbidden' }, { status: 403 });
   const upd = (await req.json()) as TgUpdate;
-  const state = domovoyState();
   const send = telegramSender(tok);
+  const db = getDomovoyDb();
+
   try {
-    // piggy-back the scheduler on incoming traffic (reminders, silence timeouts, urgent swaps)
-    if (!state.lastTick || Date.now() - state.lastTick > TICK_EVERY_MS) { state.lastTick = Date.now(); await tickAndFlush(state.store, send); }
-    await handleUpdate(state.store, upd, { send, seen: state.seenUpdates, model: () => getModelClient() });
+    // piggy-back the scheduler on incoming traffic
+    if (Date.now() - lastTick > TICK_EVERY_MS) {
+      lastTick = Date.now();
+      if (db) {
+        // tick all households
+        for (const h of await db.allHouseholds()) {
+          const s = db.store(h);
+          await tick(s, new Date().toISOString());
+          await flushOutbox(s, send);
+        }
+      } else {
+        await tickAndFlush(domovoyState().store, send);
+      }
+    }
+
+    if (db) {
+      // Multi-household: resolve chat → household via DomovoyDb
+      const chatId = String(upd.message?.chat.id ?? upd.callback_query?.message?.chat.id ?? upd.callback_query?.from.id ?? '');
+      if (!chatId) return NextResponse.json({ ok: true });
+
+      // Idempotent check
+      if (await db.seen(upd.update_id)) return NextResponse.json({ ok: true });
+
+      // Find which household this chat belongs to
+      const link = await db.memberByChat(chatId);
+      if (link) {
+        const store = db.store(link.household);
+        await handleUpdate(store, upd, { send, model: () => getModelClient() });
+      } else {
+        // Unknown chat — check if there's an onboarding session
+        const session = await db.session(chatId);
+        if (session.householdId) {
+          const h = await db.household(session.householdId);
+          if (h) {
+            const store = db.store(h);
+            await handleUpdate(store, upd, { send, model: () => getModelClient() });
+          }
+        } else {
+          // No household yet — for now reply with a hint (onboarding flow in Task 17)
+          const text = upd.message?.text?.trim() ?? '';
+          if (/^\/start/.test(text)) {
+            const inviteCode = text.split(/\s+/)[1];
+            if (inviteCode) {
+              const h = await db.householdByInvite(inviteCode);
+              if (h) {
+                await db.setSession(chatId, { householdId: h.id, state: { step: 'pick_member' } });
+                const store = db.store(h);
+                await handleUpdate(store, upd, { send, model: () => getModelClient() });
+                return NextResponse.json({ ok: true });
+              }
+            }
+            await send.sendMessage(chatId, '👋 Привет! Попросите администратора семьи прислать вам ссылку-приглашение.\n\nHi! Ask a family admin for the invite link.');
+          }
+        }
+      }
+    } else {
+      // Demo mode: single in-memory household
+      const state = domovoyState();
+      await handleUpdate(state.store, upd, { send, model: () => getModelClient() });
+    }
   } catch (e) {
     console.error('telegram webhook', e);
   }
-  if (state.seenUpdates.size > 1000) state.seenUpdates = new Set([...state.seenUpdates].slice(-500));
   return NextResponse.json({ ok: true });
 }
 

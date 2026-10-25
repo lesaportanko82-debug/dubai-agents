@@ -134,12 +134,13 @@ function keyboardFor(msg: OutgoingMessage, m: Member, task?: Task): Button[][] |
   return undefined;
 }
 
-/** Deliver outbox entries from index `from` onwards. Unlinked recipients → echo to linked admins. */
-export async function flushOutbox(store: DomovoyStore, from: number, send: TgSender): Promise<number> {
-  const [members, tasks, outbox] = await Promise.all([store.members(), store.tasks(), store.outbox()]);
+/** Deliver all pending (not yet delivered) outbox entries. Unlinked recipients → echo to linked admins. */
+export async function flushOutbox(store: DomovoyStore, send: TgSender): Promise<number> {
+  const [members, tasks, msgs] = await Promise.all([store.members(), store.tasks(), store.pending()]);
+  if (!msgs.length) return 0;
   const admins = members.filter(m => m.isAdmin && m.telegramId);
-  const pending = outbox.slice(from);
-  for (const msg of pending) {
+  const delivered: (string | number)[] = [];
+  for (const msg of msgs) {
     const m = members.find(x => x.id === msg.toId);
     if (!m) continue;
     const task = tasks.find(x => x.id === msg.taskId);
@@ -148,8 +149,10 @@ export async function flushOutbox(store: DomovoyStore, from: number, send: TgSen
     } else {
       for (const a of admins) await send.sendMessage(a.telegramId!, `📨 → ${m.name}:\n${msg.text}`);
     }
+    if (msg.id != null) delivered.push(msg.id);
   }
-  return outbox.length;
+  if (delivered.length) await store.markDelivered(delivered);
+  return msgs.length;
 }
 
 // ---------- main entry ----------
@@ -161,8 +164,7 @@ export async function handleUpdate(store: DomovoyStore, upd: TgUpdate, deps: Tel
   const chatId = chatOf(upd);
   if (!chatId) return;
   const members = await store.members();
-  const mark = (await store.outbox()).length;
-  const flush = () => flushOutbox(store, mark, send);
+  const flush = () => flushOutbox(store, send);
 
   // ---- inline buttons ----
   if (upd.callback_query) {
@@ -172,8 +174,9 @@ export async function handleUpdate(store: DomovoyStore, upd: TgUpdate, deps: Tel
       const m = members.find(x => x.id === arg);
       if (!m) { await send.answerCallback(cq.id); return; }
       if (m.telegramId && m.telegramId !== chatId) { await send.answerCallback(cq.id, t('taken', m.lang) as string); return; }
-      for (const x of members) if (x.telegramId === chatId) x.telegramId = undefined;
+      for (const x of members) if (x.telegramId === chatId) { x.telegramId = undefined; await store.saveMember(x); }
       m.telegramId = chatId;
+      await store.saveMember(m);
       await send.answerCallback(cq.id);
       if (cq.message) await send.clearKeyboard(chatId, cq.message.message_id);
       await send.sendMessage(chatId, (t('linked', m.lang) as any)(m.name) + (m.isAdmin ? '\n\n' + t('adminHint', m.lang) : ''));
@@ -205,8 +208,9 @@ export async function handleUpdate(store: DomovoyStore, upd: TgUpdate, deps: Tel
     const wanted = text.split(/\s+/)[1];
     const m = wanted ? members.find(x => x.id === wanted) : undefined;
     if (m && (!m.telegramId || m.telegramId === chatId)) {
-      for (const x of members) if (x.telegramId === chatId) x.telegramId = undefined;
+      for (const x of members) if (x.telegramId === chatId) { x.telegramId = undefined; await store.saveMember(x); }
       m.telegramId = chatId;
+      await store.saveMember(m);
       await send.sendMessage(chatId, (t('linked', m.lang) as any)(m.name) + (m.isAdmin ? '\n\n' + t('adminHint', m.lang) : ''));
       return;
     }
@@ -292,9 +296,8 @@ const nameOf = (members: Member[], id?: string) => (id ? members.find(m => m.id 
 
 /** Run the scheduler and deliver whatever it produced. */
 export async function tickAndFlush(store: DomovoyStore, send: TgSender, nowIso = new Date().toISOString()) {
-  const mark = (await store.outbox()).length;
   await tick(store, nowIso);
-  return flushOutbox(store, mark, send);
+  return flushOutbox(store, send);
 }
 
 /** Thin fetch-based Telegram Bot API client. */

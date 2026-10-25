@@ -17,7 +17,7 @@ export const POLICY = {
 
 const t2 = (x: string) => new Date(x).getTime();
 
-export async function buildContext(store: DomovoyStore, nowIso: string, tz = 'Asia/Dubai'): Promise<AssignContext> {
+export async function buildContext(store: DomovoyStore, nowIso: string, tz = store.tz): Promise<AssignContext> {
   const [members, tasks, events] = await Promise.all([store.members(), store.tasks(), store.events()]);
   const { start, end } = weekBounds(nowIso);
   const weekMinutes: Record<string, number> = {};
@@ -36,17 +36,17 @@ export const hhmm = (iso: string, tz = 'Asia/Dubai') => new Intl.DateTimeFormat(
 
 const REPLY_HINT: Record<Lang, string> = { ru: 'Ответь «ок» или «не могу» (можно предложить время: «могу в 19:00»).', en: 'Reply "ok" or "can\'t" (you may suggest a time: "can at 19:00").', tl: 'Sagutin ng "ok" o "hindi ko kaya" (pwede ring magmungkahi ng oras).', ar: 'أجب «حسناً» أو «لا أستطيع».', tr: '"tamam" ya da "yapamam" diye yanıtla.', hi: '"ठीक" या "नहीं कर सकता" जवाब दें।' };
 
-const ASSIGN_TEXT: Record<Lang, (t: Task, m: Member) => string> = {
-  ru: (t, m) => m.role === 'child'
-    ? `⭐ Квест для ${m.name}: «${t.text}»${t.dueAt ? ' до ' + hhmm(t.dueAt) : ''}. +10 очков. Напиши «готово»${t.needsProof ? ' и пришли фото' : ''}, когда сделаешь.`
-    : `${m.name}, дело: ${t.text}${t.dueAt ? ' к ' + hhmm(t.dueAt) : ''}${t.place ? ', ' + t.place : ''}.${t.urgent ? ' Срочное.' : ''} ${REPLY_HINT.ru}`,
-  en: (t, m) => m.role === 'child'
-    ? `⭐ Quest for ${m.name}: "${t.text}"${t.dueAt ? ' by ' + hhmm(t.dueAt) : ''}. +10 points. Reply "done"${t.needsProof ? ' with a photo' : ''} when finished.`
-    : `${m.name}, task: ${t.text}${t.dueAt ? ' by ' + hhmm(t.dueAt) : ''}${t.place ? ', ' + t.place : ''}.${t.urgent ? ' Time-critical.' : ''} ${REPLY_HINT.en}`,
-  tl: (t, m) => `${m.name}, gawain: ${t.text}${t.dueAt ? ' bago mag-' + hhmm(t.dueAt) : ''}${t.place ? ', ' + t.place : ''}. ${REPLY_HINT.tl}`,
-  ar: (t, m) => `${m.name}، مهمة: ${t.text}${t.dueAt ? ' قبل ' + hhmm(t.dueAt) : ''}. ${REPLY_HINT.ar}`,
-  tr: (t, m) => `${m.name}, görev: ${t.text}${t.dueAt ? ' ' + hhmm(t.dueAt) + "'e kadar" : ''}. ${REPLY_HINT.tr}`,
-  hi: (t, m) => `${m.name}, काम: ${t.text}${t.dueAt ? ' ' + hhmm(t.dueAt) + ' तक' : ''}. ${REPLY_HINT.hi}`,
+const ASSIGN_TEXT: Record<Lang, (t: Task, m: Member, tz: string) => string> = {
+  ru: (t, m, tz) => m.role === 'child'
+    ? `⭐ Квест для ${m.name}: «${t.text}»${t.dueAt ? ' до ' + hhmm(t.dueAt, tz) : ''}. +10 очков. Напиши «готово»${t.needsProof ? ' и пришли фото' : ''}, когда сделаешь.`
+    : `${m.name}, дело: ${t.text}${t.dueAt ? ' к ' + hhmm(t.dueAt, tz) : ''}${t.place ? ', ' + t.place : ''}.${t.urgent ? ' Срочное.' : ''} ${REPLY_HINT.ru}`,
+  en: (t, m, tz) => m.role === 'child'
+    ? `⭐ Quest for ${m.name}: "${t.text}"${t.dueAt ? ' by ' + hhmm(t.dueAt, tz) : ''}. +10 points. Reply "done"${t.needsProof ? ' with a photo' : ''} when finished.`
+    : `${m.name}, task: ${t.text}${t.dueAt ? ' by ' + hhmm(t.dueAt, tz) : ''}${t.place ? ', ' + t.place : ''}.${t.urgent ? ' Time-critical.' : ''} ${REPLY_HINT.en}`,
+  tl: (t, m, tz) => `${m.name}, gawain: ${t.text}${t.dueAt ? ' bago mag-' + hhmm(t.dueAt, tz) : ''}${t.place ? ', ' + t.place : ''}. ${REPLY_HINT.tl}`,
+  ar: (t, m, tz) => `${m.name}، مهمة: ${t.text}${t.dueAt ? ' قبل ' + hhmm(t.dueAt, tz) : ''}. ${REPLY_HINT.ar}`,
+  tr: (t, m, tz) => `${m.name}, görev: ${t.text}${t.dueAt ? ' ' + hhmm(t.dueAt, tz) + "'e kadar" : ''}. ${REPLY_HINT.tr}`,
+  hi: (t, m, tz) => `${m.name}, काम: ${t.text}${t.dueAt ? ' ' + hhmm(t.dueAt, tz) + ' तक' : ''}. ${REPLY_HINT.hi}`,
 };
 
 const say = (lang: Lang, ru: string, en: string) => (lang === 'ru' ? ru : en);
@@ -63,7 +63,7 @@ export async function assignTask(store: DomovoyStore, task: Task, memberId: stri
   task.reminderLevel = 0;
   await store.saveTask(task);
   await store.event({ at: nowIso, taskId: task.id, actor: 'agent', type: 'assigned', details: { to: memberId, reason } });
-  const text = message?.trim() || (ASSIGN_TEXT[m.lang] ?? ASSIGN_TEXT.en)(task, m);
+  const text = message?.trim() || (ASSIGN_TEXT[m.lang] ?? ASSIGN_TEXT.en)(task, m, store.tz);
   await store.send({ at: nowIso, toId: m.id, lang: m.lang, text, kind: 'assignment', taskId: task.id });
   return task;
 }
@@ -121,8 +121,8 @@ export async function respond(store: DomovoyStore, taskId: string, memberId: str
       t.reminderLevel = 0;
       await store.saveTask(t);
       await store.event({ at: nowIso, taskId, actor: 'agent', type: 'rescheduled', details: { by: memberId, to: opts.proposeAt } });
-      await store.send({ at: nowIso, toId: me.id, lang: me.lang, kind: 'info', taskId, text: say(me.lang, `Хорошо, «${t.text}» перенесено на ${hhmm(opts.proposeAt)}. Напомню.`, `Fine, "${t.text}" moved to ${hhmm(opts.proposeAt)}. I'll remind you.`) });
-      if (author.id !== me.id) await store.send({ at: nowIso, toId: author.id, lang: author.lang, kind: 'info', taskId, text: say(author.lang, `${me.name} сделает «${t.text}» в ${hhmm(opts.proposeAt)} вместо ${t.rescheduledFrom ? hhmm(t.rescheduledFrom) : '—'}.`, `${me.name} will do "${t.text}" at ${hhmm(opts.proposeAt)} instead of ${t.rescheduledFrom ? hhmm(t.rescheduledFrom) : '—'}.`) });
+      await store.send({ at: nowIso, toId: me.id, lang: me.lang, kind: 'info', taskId, text: say(me.lang, `Хорошо, «${t.text}» перенесено на ${hhmm(opts.proposeAt, store.tz)}. Напомню.`, `Fine, "${t.text}" moved to ${hhmm(opts.proposeAt, store.tz)}. I'll remind you.`) });
+      if (author.id !== me.id) await store.send({ at: nowIso, toId: author.id, lang: author.lang, kind: 'info', taskId, text: say(author.lang, `${me.name} сделает «${t.text}» в ${hhmm(opts.proposeAt, store.tz)} вместо ${t.rescheduledFrom ? hhmm(t.rescheduledFrom, store.tz) : '—'}.`, `${me.name} will do "${t.text}" at ${hhmm(opts.proposeAt, store.tz)} instead of ${t.rescheduledFrom ? hhmm(t.rescheduledFrom, store.tz) : '—'}.`) });
       return { task: t, swappedTo: undefined, rescheduled: true };
     }
   }
@@ -184,7 +184,7 @@ export async function tick(store: DomovoyStore, nowIso: string) {
     }
   }
 
-  const { messages, updates } = dueReminders(await store.tasks(), members, nowIso);
+  const { messages, updates } = dueReminders(await store.tasks(), members, nowIso, store.tz);
   for (const u of updates) {
     const t = (await store.tasks()).find(x => x.id === u.taskId)!;
     t.reminderLevel = u.level;
