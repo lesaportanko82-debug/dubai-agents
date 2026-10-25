@@ -1,4 +1,4 @@
-import type { ContentBlock, ModelClient, ModelResponse, ToolDef } from './agent.js';
+import type { ContentBlock, ModelClient, ModelResponse, ToolDef } from './agent';
 
 /**
  * Provider switch. The agent speaks one internal format (Claude Messages shape);
@@ -9,7 +9,7 @@ import type { ContentBlock, ModelClient, ModelResponse, ToolDef } from './agent.
 export async function getModelClient(): Promise<ModelClient> {
   const provider = (process.env.LLM_PROVIDER ?? (process.env.OPENAI_API_KEY ? 'openai' : 'anthropic')).toLowerCase();
   if (provider === 'openai') return openAiClient();
-  const { anthropicClient } = await import('./agent.js');
+  const { anthropicClient } = await import('./agent');
   return anthropicClient();
 }
 

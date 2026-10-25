@@ -1,4 +1,4 @@
-import type { Attribution, Batch } from '../types.js';
+import type { Attribution, Batch } from '../types';
 
 export interface AttributionResult {
   batch?: Batch;

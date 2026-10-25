@@ -3,10 +3,10 @@
  *   npm run owed -- "Смеситель MX-210 серия 102311 течёт из-под картриджа"
  * Requires OPENAI_API_KEY or ANTHROPIC_API_KEY. Uses synthetic demo data in memory.
  */
-import { runIntake } from './agent.js';
-import { DEMO_BATCHES, DEMO_SUPPLIERS } from './fixtures.js';
-import { InMemoryStore } from './store.js';
-import { getModelClient } from './llm.js';
+import { runIntake } from './agent';
+import { DEMO_BATCHES, DEMO_SUPPLIERS } from './fixtures';
+import { InMemoryStore } from './store';
+import { getModelClient } from './llm';
 
 const text = process.argv.slice(2).join(' ').trim();
 if (!text) {

@@ -1,4 +1,4 @@
-import type { Batch, DefectCase, NegotiationPack, Supplier } from './types.js';
+import type { Batch, DefectCase, NegotiationPack, Supplier } from './types';
 
 export interface AuditEntry {
   at: string;

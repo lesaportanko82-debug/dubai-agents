@@ -1,4 +1,4 @@
-import type { Batch, Supplier } from '../types.js';
+import type { Batch, Supplier } from '../types';
 
 /** Factory warranty runs from shipment date. */
 export function withinFactoryWarranty(batch: Batch, supplier: Supplier, receivedAtIso: string): boolean {

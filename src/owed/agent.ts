@@ -1,14 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { INTAKE_SYSTEM } from './prompts.js';
-import { redact } from './redact.js';
-import type { Store } from './store.js';
-import { attributeBatch } from './tools/attribution.js';
-import { computeCaseCost } from './tools/cost.js';
-import { decide } from './tools/decide.js';
-import { withinFactoryWarranty } from './tools/warranty.js';
-import type { DefectCase } from './types.js';
-import { defaultModel } from './llm.js';
+import { INTAKE_SYSTEM } from './prompts';
+import { redact } from './redact';
+import type { Store } from './store';
+import { attributeBatch } from './tools/attribution';
+import { computeCaseCost } from './tools/cost';
+import { decide } from './tools/decide';
+import { withinFactoryWarranty } from './tools/warranty';
+import type { DefectCase } from './types';
+import { defaultModel } from './llm';
 
 /* ---------- minimal model interface (Claude Messages API shape) ---------- */
 export type ContentBlock =

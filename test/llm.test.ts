@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fromOpenAi, toOpenAiMessages } from '../src/owed/llm.js';
+import { fromOpenAi, toOpenAiMessages } from '../src/owed/llm';
 
 test('OpenAI adapter: tool_use/tool_result round-trip', () => {
   const msgs = toOpenAiMessages('SYS', [

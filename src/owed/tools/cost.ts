@@ -1,4 +1,4 @@
-import type { Batch, CaseCost, CostInput } from '../types.js';
+import type { Batch, CaseCost, CostInput } from '../types';
 
 /** Defaults are per-organization settings in production; demo values here. */
 export interface CostPolicy {

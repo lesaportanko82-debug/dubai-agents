@@ -1,4 +1,4 @@
-import type { Batch, CompensationOption, DefectCase, NegotiationPack, Supplier } from '../types.js';
+import type { Batch, CompensationOption, DefectCase, NegotiationPack, Supplier } from '../types';
 import { randomUUID } from 'node:crypto';
 
 const r2 = (n: number) => Math.round(n * 100) / 100;

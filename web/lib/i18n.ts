@@ -1,0 +1,68 @@
+export type Lang = 'ru' | 'en';
+
+const dict = {
+  ru: {
+    platform: 'Dubai Agents',
+    domovoy: 'Домовёнок',
+    owed: 'OWED',
+    domovoy_tag: 'Семейный диспетчер',
+    owed_tag: 'Возврат затрат на брак',
+    lang_toggle: 'EN',
+    // nav domovoy
+    d_home: 'Сегодня в доме',
+    d_family: 'Семья',
+    d_tasks: 'Доска дел',
+    d_trace: 'Как решал агент',
+    d_fairness: 'Справедливость',
+    d_sim: 'Попробовать',
+    // nav owed
+    o_home: 'Книга долга',
+    o_cases: 'Случаи',
+    o_review: 'На проверку',
+    o_batches: 'Партии и всплески',
+    o_packs: 'Переговорные пакеты',
+    o_intake: 'Принять рекламацию',
+    // common
+    status: 'Статус',
+    why: 'Почему',
+    approve: 'Одобрить',
+    reject: 'Отклонить',
+    send: 'Отправить',
+    run: 'Запустить агента',
+    empty_trace: 'Пока нет ни одного прогона. Отправьте сообщение в разделе «Попробовать».',
+    minutes: 'мин',
+    usd: 'USD',
+  },
+  en: {
+    platform: 'Dubai Agents',
+    domovoy: 'Domovoy',
+    owed: 'OWED',
+    domovoy_tag: 'Household dispatcher',
+    owed_tag: 'Warranty-cost recovery',
+    lang_toggle: 'RU',
+    d_home: 'Today at home',
+    d_family: 'Family',
+    d_tasks: 'Task board',
+    d_trace: 'Agent decisions',
+    d_fairness: 'Fairness',
+    d_sim: 'Try it',
+    o_home: 'Debt ledger',
+    o_cases: 'Cases',
+    o_review: 'Needs review',
+    o_batches: 'Batches & spikes',
+    o_packs: 'Negotiation packs',
+    o_intake: 'Intake a complaint',
+    status: 'Status',
+    why: 'Why',
+    approve: 'Approve',
+    reject: 'Reject',
+    send: 'Send',
+    run: 'Run the agent',
+    empty_trace: 'No runs yet. Send a message in “Try it”.',
+    minutes: 'min',
+    usd: 'USD',
+  },
+} as const;
+
+export type Key = keyof typeof dict.ru;
+export const t = (lang: Lang, k: Key): string => dict[lang][k] ?? dict.ru[k];

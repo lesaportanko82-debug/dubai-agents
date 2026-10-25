@@ -6,11 +6,11 @@
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { runIntake } from '../../src/owed/agent.js';
-import { DEMO_BATCHES, DEMO_SUPPLIERS } from '../../src/owed/fixtures.js';
-import { InMemoryStore } from '../../src/owed/store.js';
-import { getModelClient } from '../../src/owed/llm.js';
-import { computeCaseCost } from '../../src/owed/tools/cost.js';
+import { runIntake } from '../../src/owed/agent';
+import { DEMO_BATCHES, DEMO_SUPPLIERS } from '../../src/owed/fixtures';
+import { InMemoryStore } from '../../src/owed/store';
+import { getModelClient } from '../../src/owed/llm';
+import { computeCaseCost } from '../../src/owed/tools/cost';
 
 interface Expect { class?: string; batch?: string | null; status?: string; duplicate?: boolean; total_min?: number; no_pii?: boolean }
 interface EvalCase { id: string; tag?: string; text: string; received_at?: string; prior_ref?: string; expect: Expect }

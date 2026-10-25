@@ -1,16 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { attributeBatch } from '../src/owed/tools/attribution.js';
-import { computeCaseCost } from '../src/owed/tools/cost.js';
-import { decide } from '../src/owed/tools/decide.js';
-import { detectSpikes } from '../src/owed/tools/spikes.js';
-import { assemblePack } from '../src/owed/tools/pack.js';
-import { withinFactoryWarranty } from '../src/owed/tools/warranty.js';
-import { redact } from '../src/owed/redact.js';
-import { DEMO_BATCHES, DEMO_SUPPLIERS } from '../src/owed/fixtures.js';
-import { InMemoryStore } from '../src/owed/store.js';
-import { runIntake, type ModelClient, type ModelResponse } from '../src/owed/agent.js';
-import type { DefectCase } from '../src/owed/types.js';
+import { attributeBatch } from '../src/owed/tools/attribution';
+import { computeCaseCost } from '../src/owed/tools/cost';
+import { decide } from '../src/owed/tools/decide';
+import { detectSpikes } from '../src/owed/tools/spikes';
+import { assemblePack } from '../src/owed/tools/pack';
+import { withinFactoryWarranty } from '../src/owed/tools/warranty';
+import { redact } from '../src/owed/redact';
+import { DEMO_BATCHES, DEMO_SUPPLIERS } from '../src/owed/fixtures';
+import { InMemoryStore } from '../src/owed/store';
+import { runIntake, type ModelClient, type ModelResponse } from '../src/owed/agent';
+import type { DefectCase } from '../src/owed/types';
 
 test('attribution by serial picks the exact batch', () => {
   const a = attributeBatch(DEMO_BATCHES, 'mx-210', 102311);

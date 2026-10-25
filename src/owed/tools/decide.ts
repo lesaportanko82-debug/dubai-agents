@@ -1,4 +1,4 @@
-import type { Attribution, CaseStatus, DefectClass } from '../types.js';
+import type { Attribution, CaseStatus, DefectClass } from '../types';
 
 export const CONFIDENCE_THRESHOLD = 0.75;
 

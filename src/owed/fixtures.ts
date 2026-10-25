@@ -1,4 +1,4 @@
-import type { Batch, Supplier } from './types.js';
+import type { Batch, Supplier } from './types';
 
 /** Synthetic demo data — fictional factories and products. Never real customer data. */
 export const DEMO_SUPPLIERS: Supplier[] = [

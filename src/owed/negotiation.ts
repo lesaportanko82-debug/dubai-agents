@@ -1,9 +1,9 @@
-import { PACK_SYSTEM } from './prompts.js';
-import type { ModelClient } from './agent.js';
-import type { Store } from './store.js';
-import { assemblePack } from './tools/pack.js';
-import type { NegotiationPack } from './types.js';
-import { defaultModel } from './llm.js';
+import { PACK_SYSTEM } from './prompts';
+import type { ModelClient } from './agent';
+import type { Store } from './store';
+import { assemblePack } from './tools/pack';
+import type { NegotiationPack } from './types';
+import { defaultModel } from './llm';
 
 /**
  * Builds a negotiation pack for one factory. Numbers are assembled in code;

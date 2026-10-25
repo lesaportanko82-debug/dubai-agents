@@ -1,4 +1,4 @@
-import type { Batch, DefectCase, Supplier } from '../types.js';
+import type { Batch, DefectCase, Supplier } from '../types';
 
 export interface BatchRate {
   batch: Batch;
