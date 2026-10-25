@@ -1,0 +1,33 @@
+import type { Member, Task } from '../types';
+
+export interface FairnessRow { memberId: string; name: string; role: string; minutes: number; tasks: number; points: number }
+
+/** Minutes of done tasks per member in the ISO week containing `ref`. */
+export function weeklyLedger(members: Member[], tasks: Task[], refIso: string): FairnessRow[] {
+  const { start, end } = weekBounds(refIso);
+  return members.map(m => {
+    const done = tasks.filter(t => t.assigneeId === m.id && t.status === 'done' && t.doneAt && t.doneAt >= start && t.doneAt < end);
+    const minutes = done.reduce((s, t) => s + t.minutes, 0);
+    return { memberId: m.id, name: m.name, role: m.role, minutes, tasks: done.length, points: m.role === 'child' ? done.length * 10 : 0 };
+  });
+}
+
+/** Helper minutes are paid work; the balance that matters is between adults. */
+export function balanceSuggestion(rows: FairnessRow[], lang: 'ru' | 'en' = 'ru'): string {
+  const adults = rows.filter(r => r.role === 'adult').sort((a, b) => b.minutes - a.minutes);
+  if (adults.length < 2) return '';
+  const [hi, lo] = adults;
+  const gap = hi.minutes - lo.minutes;
+  if (gap < 45) return lang === 'ru' ? 'Нагрузка между взрослыми ровная. Так держать.' : 'Load between adults is even. Keep it up.';
+  return lang === 'ru'
+    ? `${hi.name} сделал(а) на ${gap} мин больше, чем ${lo.name}. На следующей неделе Домовёнок будет чаще предлагать дела ${lo.name}.`
+    : `${hi.name} did ${gap} min more than ${lo.name}. Next week Domovoy will offer more tasks to ${lo.name}.`;
+}
+
+export function weekBounds(refIso: string) {
+  const d = new Date(refIso);
+  const day = (d.getUTCDay() + 6) % 7; // Monday = 0
+  const start = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - day));
+  const end = new Date(start); end.setUTCDate(end.getUTCDate() + 7);
+  return { start: start.toISOString(), end: end.toISOString() };
+}
