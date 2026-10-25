@@ -33,6 +33,7 @@ export interface Task {
   kidSafe: boolean;             // can a child do it
   recurring?: 'daily' | 'weekly';
   assigneeId?: string;
+  assignedAt?: string;
   candidateIds: string[];       // ranked, allowed only
   declinedBy: string[];
   status: TaskStatus;
@@ -40,13 +41,22 @@ export interface Task {
   assignReason?: string;
   createdAt: string;
   doneAt?: string;
+  /** time-critical (pickups, medicine): silence or decline → immediate swap, no rescheduling */
+  urgent?: boolean;
+  /** the task is about this person (take granny to the clinic) — they cannot be the executor */
+  aboutMemberId?: string;
+  /** a photo is required to close the task */
+  needsProof?: boolean;
+  proofUrl?: string;
+  /** set when the assignee proposed a later time and the task was moved */
+  rescheduledFrom?: string;
 }
 
 export interface TaskEvent {
   at: string;
   taskId: string;
   actor: string;                // member id | 'agent'
-  type: 'created' | 'assigned' | 'accepted' | 'declined' | 'swapped' | 'reminded' | 'done' | 'message' | 'blocked';
+  type: 'created' | 'assigned' | 'accepted' | 'declined' | 'swapped' | 'reminded' | 'done' | 'message' | 'blocked' | 'rescheduled' | 'timeout' | 'proof_requested' | 'auto_replaced';
   details?: Record<string, unknown>;
 }
 

@@ -46,9 +46,9 @@ function seed(store: InMemoryDomovoyStore) {
     mk('s10', { text: 'Оплатить школу', assigneeId: 'mum', minutes: 20, doneAt: day(4, 8), dueAt: day(4, 8) }),
     mk('s11', { text: 'Покормить кота', assigneeId: 'son', minutes: 5, skills: ['feed_cat'], kidSafe: true, doneAt: day(0, 4), dueAt: day(0, 4) }),
     // open items for today
-    mk('o1', { text: 'Забрать Машу из сада', assigneeId: 'dad', status: 'accepted', minutes: 40, skills: ['drive'], dueAt: day(0, 13), candidateIds: ['dad', 'mum'], assignReason: 'free at 17:00, did less this week' }),
-    mk('o2', { text: 'Купить молоко и хлеб', assigneeId: 'joy', status: 'assigned', minutes: 20, skills: ['shop'], dueAt: day(0, 12), candidateIds: ['joy', 'dad'], assignReason: 'household chore within working hours' }),
-    mk('o3', { text: 'Полить цветы на балконе', assigneeId: 'son', status: 'assigned', minutes: 10, skills: ['water_plants'], kidSafe: true, dueAt: day(0, 14), candidateIds: ['son', 'granny', 'joy'], assignReason: 'good chore for a child, free today', reminderLevel: 1 }),
+    mk('o1', { text: 'Забрать Машу из сада', assigneeId: 'dad', status: 'accepted', minutes: 40, skills: ['drive'], dueAt: day(0, 13), candidateIds: ['dad', 'mum'], assignReason: 'free at 17:00, did less this week', urgent: true, aboutMemberId: 'masha', assignedAt: day(0, 5) }),
+    mk('o2', { text: 'Купить молоко и хлеб', assigneeId: 'joy', status: 'assigned', minutes: 20, skills: ['shop'], dueAt: day(0, 12), candidateIds: ['joy', 'dad'], assignReason: 'household chore within working hours', assignedAt: new Date().toISOString() }),
+    mk('o3', { text: 'Полить цветы на балконе', assigneeId: 'son', status: 'accepted', minutes: 10, skills: ['water_plants'], kidSafe: true, dueAt: day(0, 14), candidateIds: ['son', 'granny', 'joy'], assignReason: 'good chore for a child, free today', reminderLevel: 1, needsProof: true, assignedAt: new Date().toISOString() }),
   ];
   for (const t of rows) void store.saveTask(t);
 }

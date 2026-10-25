@@ -8,13 +8,16 @@ export async function respondAction(formData: FormData) {
   const taskId = String(formData.get('taskId'));
   const memberId = String(formData.get('memberId'));
   const answer = String(formData.get('answer')) as 'accept' | 'decline';
-  try { await respond(store, taskId, memberId, answer, demoNow()); } catch { /* ignore stale clicks */ }
+  const proposeIn = Number(formData.get('proposeInMin') ?? 0); // "can't now, can in N minutes"
+  const proposeAt = proposeIn > 0 ? new Date(Date.now() + proposeIn * 60_000).toISOString() : undefined;
+  try { await respond(store, taskId, memberId, answer, demoNow(), { proposeAt }); } catch { /* ignore stale clicks */ }
   revalidatePath('/domovoy', 'layout');
 }
 
 export async function doneAction(formData: FormData) {
   const { store } = domovoyState();
-  try { await markDone(store, String(formData.get('taskId')), String(formData.get('memberId')), demoNow()); } catch { /* ignore */ }
+  const withPhoto = formData.get('photo') === '1';
+  try { await markDone(store, String(formData.get('taskId')), String(formData.get('memberId')), demoNow(), withPhoto ? { proofUrl: `photos/${formData.get('taskId')}.jpg` } : {}); } catch { /* ignore */ }
   revalidatePath('/domovoy', 'layout');
 }
 

@@ -22,6 +22,7 @@ export function canAssign(m: Member, t: Task, opts: { now: string; tz?: string; 
     // the author may do it, but the dispatcher prefers others; not a hard block
   }
   if (t.declinedBy.includes(m.id)) return { ok: false, reason: 'already declined' };
+  if (t.aboutMemberId && t.aboutMemberId === m.id) return { ok: false, reason: 'the task is about this person' };
 
   if (m.role === 'child') {
     if (!t.kidSafe) return { ok: false, reason: 'not a task for a child' };

@@ -28,7 +28,7 @@ export default async function TasksPage() {
     <>
       <PageTitle
         title={ru ? 'Доска дел' : 'Task board'}
-        lead={ru ? 'Кнопки «ок / не могу / готово» — это ответы членов семьи из их мессенджера. Здесь их можно нажать за них, чтобы посмотреть, как агент реагирует.' : 'The “ok / can’t / done” buttons stand for family members’ replies from their messenger. Press them here to see how the agent reacts.'}
+        lead={ru ? 'Кнопки — это ответы членов семьи из их мессенджера; здесь их можно нажать за них. Молчание дольше 45 минут агент считает отказом; срочное дело без «ок» за 20 минут до срока он передаёт сам.' : 'The buttons stand for family members’ replies from their messenger; press them here on their behalf. Silence over 45 minutes counts as a decline; an urgent task without an “ok” 20 minutes before due is handed over automatically.'}
         right={
           <form action={tickAction} className="flex items-center gap-2 text-[13px]">
             <span className="text-mute">{ru ? 'Промотать время:' : 'Skip time:'}</span>
@@ -52,6 +52,9 @@ export default async function TasksPage() {
                         {t.dueAt && <span className="num">{hhmm(t.dueAt)}</span>}
                         <span>{t.minutes} {ru ? 'мин' : 'min'}</span>
                         {t.kidSafe && <Pill tone="accent">{ru ? 'для ребёнка' : 'kid-safe'}</Pill>}
+                        {t.urgent && <Pill tone="bad">{ru ? 'срочное' : 'urgent'}</Pill>}
+                        {t.needsProof && <Pill tone="info">{ru ? 'нужно фото' : 'photo required'}</Pill>}
+                        {t.rescheduledFrom && <span title={ru ? 'перенесено' : 'rescheduled'}>↷ {hhmm(t.rescheduledFrom)}</span>}
                         {t.reminderLevel > 0 && <span title={ru ? 'уровень напоминания' : 'reminder level'}>{'●'.repeat(t.reminderLevel)}{'○'.repeat(3 - t.reminderLevel)}</span>}
                       </div>
                       {m && (
@@ -63,13 +66,19 @@ export default async function TasksPage() {
                       )}
                       {t.status === 'unassigned' && <div className="mt-2 text-bad">{ru ? 'Никто не может взять. Отказались: ' : 'Nobody can take it. Declined: '}{t.declinedBy.map(id => byId.get(id)?.name).join(', ')}</div>}
                       {m && t.status === 'assigned' && (
-                        <div className="mt-2 flex gap-1.5">
+                        <div className="mt-2 flex flex-wrap gap-1.5">
                           <form action={respondAction}><input type="hidden" name="taskId" value={t.id} /><input type="hidden" name="memberId" value={m.id} /><button name="answer" value="accept" className={`${btn} accent-bg text-white border-transparent`}>{ru ? 'ок' : 'ok'}</button></form>
                           <form action={respondAction}><input type="hidden" name="taskId" value={t.id} /><input type="hidden" name="memberId" value={m.id} /><button name="answer" value="decline" className={`${btn} border-stone-300 bg-paper`}>{ru ? 'не могу' : "can't"}</button></form>
+                          {!t.urgent && (
+                            <form action={respondAction}><input type="hidden" name="taskId" value={t.id} /><input type="hidden" name="memberId" value={m.id} /><input type="hidden" name="proposeInMin" value="120" /><button name="answer" value="decline" className={`${btn} border-stone-300 bg-paper`} title={ru ? 'отказ с предложением времени' : 'decline with a proposed time'}>{ru ? 'могу через 2 ч' : 'can in 2 h'}</button></form>
+                          )}
                         </div>
                       )}
                       {m && t.status === 'accepted' && (
-                        <form action={doneAction} className="mt-2"><input type="hidden" name="taskId" value={t.id} /><input type="hidden" name="memberId" value={m.id} /><button className={`${btn} accent-bg text-white border-transparent`}>{ru ? 'готово' : 'done'}</button></form>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          <form action={doneAction}><input type="hidden" name="taskId" value={t.id} /><input type="hidden" name="memberId" value={m.id} /><button className={`${btn} accent-bg text-white border-transparent`}>{ru ? 'готово' : 'done'}</button></form>
+                          {t.needsProof && <form action={doneAction}><input type="hidden" name="taskId" value={t.id} /><input type="hidden" name="memberId" value={m.id} /><input type="hidden" name="photo" value="1" /><button className={`${btn} border-stone-300 bg-paper`}>{ru ? 'готово + фото' : 'done + photo'}</button></form>}
+                        </div>
                       )}
                     </li>
                   );

@@ -19,6 +19,9 @@ const ProposeIn = z.object({
     skills: z.array(z.string()).max(4),
     kid_safe: z.boolean(),
     recurring: z.enum(['daily', 'weekly']).optional(),
+    urgent: z.boolean().optional(),
+    about_member_id: z.string().optional(),
+    needs_proof: z.boolean().optional(),
   })).min(1).max(8),
 });
 const AssignIn = z.object({ task_id: z.string(), member_id: z.string(), reason: z.string().min(3).max(200), message: z.string().min(3).max(400) });
@@ -39,6 +42,9 @@ export const DISPATCH_TOOLS: ToolDef[] = [
               text: { type: 'string' }, due_at: { type: 'string', description: 'ISO 8601 with timezone offset, if known' }, place: { type: 'string' },
               minutes: { type: 'integer' }, skills: { type: 'array', items: { type: 'string', enum: Object.keys(KID_SKILLS) } },
               kid_safe: { type: 'boolean' }, recurring: { type: 'string', enum: ['daily', 'weekly'] },
+              urgent: { type: 'boolean', description: 'Time-critical: picking up a person, medicine, a fixed appointment' },
+              about_member_id: { type: 'string', description: 'If the task is about a family member (take granny to the clinic), their id — they will not be the executor' },
+              needs_proof: { type: 'boolean', description: 'A photo is required to close it (author asked for proof, or outcome is hard to verify)' },
             },
             required: ['text', 'minutes', 'skills', 'kid_safe'],
           },
@@ -107,6 +113,7 @@ export async function runDispatch(client: ModelClient, store: DomovoyStore, auth
         const t: Task = {
           id: 't-' + randomUUID().slice(0, 8), authorId, text: redact(p.text).text, dueAt: p.due_at, place: p.place, minutes: p.minutes, skills: p.skills,
           kidSafe: p.kid_safe, recurring: p.recurring, candidateIds: [], declinedBy: [], status: 'new', reminderLevel: 0, createdAt: now,
+          urgent: p.urgent, aboutMemberId: p.about_member_id, needsProof: p.needs_proof,
         };
         const { allowed, blocked } = rankCandidates(members, t, ctx);
         t.candidateIds = allowed.map(c => c.memberId);

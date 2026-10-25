@@ -153,3 +153,83 @@ test('dispatch loop: three tasks, right people, helper in Tagalog, child gets a 
   assert.ok(flowers.allowed.some((c: any) => c.member_id === 'son'));
   assert.ok(flowers.blocked.some((b: any) => b.memberId === 'masha'));
 });
+
+/* ---- resilience: silence, reschedule, urgent, declines, proof, "not about themselves" ---- */
+
+test('task about a person is never assigned to that person', () => {
+  const clinic = mkTask({ skills: ['drive', 'pickup_walk'], aboutMemberId: 'granny', dueAt: '2026-10-28T05:00:00.000Z' });
+  const { allowed, blocked } = rankCandidates(DEMO_FAMILY, clinic, { now: NOW, weekMinutes: {}, openToday: {} });
+  assert.ok(!allowed.some(c => c.memberId === 'granny'));
+  assert.ok(blocked.some(b => b.memberId === 'granny' && b.reason === 'the task is about this person'));
+});
+
+test('silence longer than the timeout counts as a decline and the task moves on', async () => {
+  const store = new InMemoryDomovoyStore(DEMO_FAMILY.map(m => ({ ...m, busy: [] })));
+  const t = mkTask({ id: 'q1', skills: ['shop'], dueAt: '2026-10-27T14:00:00.000Z', candidateIds: ['dad', 'joy', 'mum'] });
+  await store.saveTask(t);
+  await assignTask(store, t, 'dad', 'test', NOW);
+  await tick(store, '2026-10-27T11:30:00.000Z'); // 30 min: still waiting
+  assert.equal((await store.tasks())[0].assigneeId, 'dad');
+  const sent = await tick(store, '2026-10-27T11:50:00.000Z'); // 50 min: timeout
+  const after = (await store.tasks())[0];
+  assert.notEqual(after.assigneeId, 'dad');
+  assert.ok(after.declinedBy.includes('dad'));
+  assert.ok(sent.some(s => s.kind === 'timeout'));
+  assert.ok((await store.events()).some(e => e.type === 'timeout'));
+});
+
+test('decline with a proposed time reschedules instead of swapping (non-urgent only)', async () => {
+  const store = new InMemoryDomovoyStore(DEMO_FAMILY);
+  const t = mkTask({ id: 'q2', skills: ['laundry'], dueAt: '2026-10-27T13:00:00.000Z', candidateIds: ['dad', 'joy'] });
+  await store.saveTask(t);
+  await assignTask(store, t, 'dad', 'test', NOW);
+  const r = await respond(store, 'q2', 'dad', 'decline', NOW, { proposeAt: '2026-10-27T15:00:00.000Z' });
+  assert.equal(r.rescheduled, true);
+  assert.equal(r.task.assigneeId, 'dad');
+  assert.equal(r.task.status, 'accepted');
+  assert.equal(r.task.dueAt, '2026-10-27T15:00:00.000Z');
+  assert.ok((await store.outbox()).some(m => m.toId === 'mum' && /15:00|19:00/.test(m.text))); // author informed (Dubai time shown)
+
+  const u = mkTask({ id: 'q3', urgent: true, skills: ['drive'], dueAt: '2026-10-27T13:00:00.000Z', candidateIds: ['dad', 'mum'] });
+  await store.saveTask(u);
+  await assignTask(store, u, 'dad', 'test', NOW);
+  const r2 = await respond(store, 'q3', 'dad', 'decline', NOW, { proposeAt: '2026-10-27T15:00:00.000Z' });
+  assert.equal(r2.rescheduled, false);
+  assert.equal(r2.swappedTo, 'mum'); // urgent: no rescheduling, straight to the next person
+});
+
+test('urgent task without confirmation close to due time is auto-replaced', async () => {
+  const store = new InMemoryDomovoyStore(DEMO_FAMILY.map(m => ({ ...m, busy: [] })));
+  const t = mkTask({ id: 'q4', urgent: true, skills: ['drive', 'pickup_walk'], dueAt: '2026-10-27T12:00:00.000Z', candidateIds: ['dad', 'granny', 'mum'] });
+  await store.saveTask(t);
+  await assignTask(store, t, 'dad', 'test', '2026-10-27T11:30:00.000Z');
+  const sent = await tick(store, '2026-10-27T11:45:00.000Z'); // 15 min before due, dad silent
+  const after = (await store.tasks())[0];
+  assert.notEqual(after.assigneeId, 'dad');
+  assert.ok(sent.some(s => s.kind === 'auto_replace'));
+  assert.ok((await store.outbox()).some(m => m.toId === 'dad' && /передаю другому|handing it over/.test(m.text)));
+});
+
+test('frequent decliners get offered first next time', async () => {
+  const store = new InMemoryDomovoyStore(DEMO_FAMILY);
+  await store.event({ at: NOW, taskId: 'x', actor: 'dad', type: 'declined' });
+  await store.event({ at: NOW, taskId: 'y', actor: 'dad', type: 'declined' });
+  const ctx = await buildContext(store, NOW);
+  assert.equal(ctx.weekDeclines?.dad, 2);
+  const { allowed } = rankCandidates(DEMO_FAMILY, mkTask({ skills: ['shop'], dueAt: '2026-10-27T19:00:00.000Z' }), ctx); // 23:00 Dubai: helper off hours
+  assert.equal(allowed[0].memberId, 'dad');
+  assert.ok(allowed[0].reasons.includes('declined earlier this week, their turn'));
+});
+
+test('tasks that need proof stay open until a photo arrives', async () => {
+  const store = new InMemoryDomovoyStore(DEMO_FAMILY);
+  const t = mkTask({ id: 'q5', needsProof: true, assigneeId: 'son', status: 'accepted', skills: ['water_plants'], kidSafe: true, candidateIds: ['son'] });
+  await store.saveTask(t);
+  const r1 = await markDone(store, 'q5', 'son', NOW);
+  assert.equal(r1.needProof, true);
+  assert.equal(r1.task.status, 'accepted');
+  assert.ok((await store.outbox()).some(m => m.toId === 'son' && /фото|photo/.test(m.text)));
+  const r2 = await markDone(store, 'q5', 'son', NOW, { proofUrl: 'photos/q5.jpg' });
+  assert.equal(r2.task.status, 'done');
+  assert.equal(r2.task.proofUrl, 'photos/q5.jpg');
+});

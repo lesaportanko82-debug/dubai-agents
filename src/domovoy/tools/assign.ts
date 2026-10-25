@@ -8,6 +8,8 @@ export interface AssignContext {
   weekMinutes: Record<string, number>;
   /** open (assigned/accepted) tasks today per member */
   openToday: Record<string, number>;
+  /** declines and silences this week per member — frequent decliners get offered first next time */
+  weekDeclines?: Record<string, number>;
 }
 
 /**
@@ -37,6 +39,10 @@ export function rankCandidates(members: Member[], task: Task, ctx: AssignContext
     const open = ctx.openToday[m.id] ?? 0;
     score -= open * 6;
     if (open === 0) reasons.push('free today');
+
+    // declined or ignored tasks this week → it is their turn
+    const dec = ctx.weekDeclines?.[m.id] ?? 0;
+    if (dec > 0) { score += Math.min(12, dec * 4); reasons.push('declined earlier this week, their turn'); }
 
     // the author should not be the dispatcher's first choice
     if (m.id === task.authorId) { score -= 25; reasons.push('author of the task'); }
