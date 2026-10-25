@@ -60,7 +60,8 @@ export async function assignTask(store: DomovoyStore, task: Task, memberId: stri
   if (!task.candidateIds.includes(memberId)) throw new Error(`${memberId} is not an allowed candidate; allowed: ${task.candidateIds.join(', ') || 'none'}`);
   task.assigneeId = memberId;
   task.assignedAt = nowIso;
-  task.status = 'assigned';
+  // Self-task: auto-accept (no confirmation needed when author assigns to themselves)
+  task.status = task.authorId === memberId ? 'accepted' : 'assigned';
   task.assignReason = reason;
   task.reminderLevel = 0;
   await store.saveTask(task);

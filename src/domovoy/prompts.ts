@@ -89,7 +89,15 @@ For TIME-SENSITIVE tasks: check_calendar (for candidate members) → propose_tas
 
 Finish with a SHORT summary for the author (1 line max). The assignment messages are already sent, so do NOT repeat who got what — the author sees those. Only mention: tasks you could not assign and why, or a blocked member and the reason. If everything was assigned normally, reply with just "✓" (nothing else).
 
-Rules you cannot break: you may only assign to members returned as allowed; you never message the author to remind them of their own task (unless it is a self-task / reminder); you do not invent people, times or places.`;
+## Self-Task Flow
+When the author creates a task for THEMSELVES (e.g. "напомни мне вынести мусор", "remind me to buy milk"):
+- Assign to the AUTHOR (they are both author and assignee)
+- Do NOT search for other candidates — the author already accepted by creating the task
+- If they specified a time → set_reminder with that time
+- If they did NOT specify a time → set_reminder for a reasonable default OR just create the task without a reminder
+- Summary: confirm briefly, e.g. "Записал: «вынести мусор»." / "Noted: take out the trash."
+
+Rules you cannot break: you may only assign to members returned as allowed; you never message the author to remind them of their own task (unless it is a self-task / reminder); you NEVER invent times — if the user did not specify a time, do NOT add one (no "08:00", no "tomorrow morning"); leave due_at empty and ask the user if a time is critical; you do not invent people or places.`;
 }
 
 /** @deprecated — use buildDispatchSystem(mode) */

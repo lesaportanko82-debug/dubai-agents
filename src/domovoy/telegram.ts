@@ -28,7 +28,7 @@ export interface TgMessage {
 export interface TgCallback { id: string; from: TgUser; message?: TgMessage; data?: string }
 export interface TgUpdate { update_id: number; message?: TgMessage; callback_query?: TgCallback }
 
-export type Button = { text: string; data: string };
+export type Button = { text: string; data: string; url?: string };
 export interface TgSender {
   sendMessage(chatId: string, text: string, keyboard?: Button[][]): Promise<void>;
   answerCallback(id: string, text?: string): Promise<void>;
@@ -129,6 +129,10 @@ function keyboardFor(msg: OutgoingMessage, m: Member, task?: Task): Button[][] |
   if (!msg.taskId) return undefined;
   const l = m.lang;
   if (msg.kind === 'assignment' || msg.kind === 'request') {
+    // Self-task: author assigned to themselves → no confirmation needed, only "done" button
+    if (task && task.authorId === task.assigneeId) {
+      return [[{ text: t('btnDone', l), data: `f:${msg.taskId}` }]];
+    }
     if (m.role === 'child') return [[{ text: t('btnDone', l), data: `f:${msg.taskId}` }]];
     const row: Button[] = [{ text: t('btnOk', l), data: `a:${msg.taskId}` }, { text: t('btnNo', l), data: `d:${msg.taskId}` }];
     if (!task?.urgent) row.push({ text: t('btnLater', l), data: `l:${msg.taskId}` });
@@ -247,6 +251,16 @@ export async function handleUpdate(store: DomovoyStore, upd: TgUpdate, deps: Tel
   if (/^\/switch/.test(text)) { await askWho(); return; }
   if (!me) { await askWho(); return; }
   if (/^\/help/.test(text)) { await send.sendMessage(chatId, t('help', me.lang) as string); return; }
+  if (/^\/(connect|calendar_connect|подключить)/.test(text)) {
+    const baseUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL ?? process.env.NEXT_PUBLIC_URL ?? 'https://dubai-agents.vercel.app';
+    const host = baseUrl.replace(/^https?:\/\//, '');
+    const calendarUrl = `https://${host}/api/domovoy/calendar/connect?member=${me.id}&household=${store.householdId}`;
+    const msg = me.lang === 'ru'
+      ? '📅 Подключите Google Calendar, чтобы агент учитывал вашу занятость при назначении задач:'
+      : '📅 Connect Google Calendar so the agent checks your availability before assigning tasks:';
+    await send.sendMessage(chatId, msg, [[{ text: me.lang === 'ru' ? '🔗 Подключить Google Calendar' : '🔗 Connect Google Calendar', data: '', url: calendarUrl }]]);
+    return;
+  }
   if (/^\/whoami/.test(text)) { await send.sendMessage(chatId, `${me.name} · ${me.role} · ${me.lang}${me.isAdmin ? ' · admin' : ''}`); return; }
   if (/^\/tasks/.test(text)) {
     const mine = (await store.tasks()).filter(x => x.assigneeId === me.id && ['assigned', 'accepted'].includes(x.status));
@@ -425,7 +439,7 @@ export function telegramSender(token: string): TgSender {
   };
   return {
     async sendMessage(chatId, text, keyboard) {
-      await api('sendMessage', { chat_id: chatId, text, reply_markup: keyboard ? { inline_keyboard: keyboard.map(r => r.map(b => ({ text: b.text, callback_data: b.data }))) } : undefined });
+      await api('sendMessage', { chat_id: chatId, text, reply_markup: keyboard ? { inline_keyboard: keyboard.map(r => r.map(b => b.url ? { text: b.text, url: b.url } : { text: b.text, callback_data: b.data })) } : undefined });
     },
     async answerCallback(id, text) { await api('answerCallbackQuery', { callback_query_id: id, text }); },
     async clearKeyboard(chatId, messageId) { await api('editMessageReplyMarkup', { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }); },

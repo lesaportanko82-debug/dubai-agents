@@ -307,10 +307,10 @@ export async function runDispatch(client: ModelClient, store: DomovoyStore, auth
       if (member_id) {
         const m = members.find(x => x.id === member_id);
         if (!m) throw new Error('unknown member_id');
-        const avail = await checkCalendar({ memberId: m.id, memberName: m.name, calendarId: (m as any).calendarId, from, to });
+        const avail = await checkCalendar({ memberId: m.id, memberName: m.name, calendarId: m.calendarId, from, to });
         return avail;
       }
-      const calMembers = members.map(m => ({ id: m.id, name: m.name, calendarId: (m as any).calendarId }));
+      const calMembers = members.map(m => ({ id: m.id, name: m.name, calendarId: m.calendarId }));
       return await checkFamilyCalendars(calMembers, from, to);
     }
     if (name === 'propose_tasks') {

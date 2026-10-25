@@ -24,6 +24,8 @@ export interface Member {
   messageStyle: MessageStyle;
   /** weekly availability: array of { day: 0..6 (Mon=0), from: "HH:MM", to: "HH:MM" }. Default 08:00–22:00 every day. */
   availability?: { day: number; from: string; to: string }[];
+  /** Google Calendar ID (email) for availability checks */
+  calendarId?: string;
 }
 
 export type TaskStatus = 'new' | 'assigned' | 'accepted' | 'done' | 'declined' | 'unassigned' | 'cancelled';

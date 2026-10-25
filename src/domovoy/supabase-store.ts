@@ -24,6 +24,7 @@ const memberFromRow = (r: Row): Member => ({
   busy: r.busy ?? [], dailyLimit: r.daily_limit ?? 3, isAdmin: !!r.is_admin,
   messageStyle: (r.message_style as MessageStyle) ?? 'direct',
   availability: r.availability?.length ? r.availability : undefined,
+  calendarId: r.calendar_id ?? undefined,
 });
 const memberToRow = (householdId: string, m: Member): Row => ({
   id: m.id, household_id: householdId, name: m.name, role: m.role, age: m.age ?? null, lang: m.lang,
@@ -31,6 +32,7 @@ const memberToRow = (householdId: string, m: Member): Row => ({
   busy: m.busy ?? [], daily_limit: m.dailyLimit, is_admin: !!m.isAdmin,
   message_style: m.messageStyle ?? 'direct',
   availability: m.availability ?? [],
+  calendar_id: m.calendarId ?? null,
 });
 const householdFromRow = (r: Row): Household => ({ id: r.id, name: r.name, tz: r.tz, lang: r.lang, inviteCode: r.invite_code, pin: r.pin ?? '', mode: (r.mode as HouseholdMode) ?? 'classic' });
 
@@ -326,6 +328,42 @@ export class DomovoyDb {
     const m = await this.memberById(data.member_id);
     if (!m) return undefined;
     return { household: householdFromRow(data.dm_households), member: m.member };
+  }
+
+  /** Store Google Calendar OAuth tokens for a member. */
+  async saveCalendarToken(householdId: string, memberId: string, token: {
+    accessToken: string;
+    refreshToken: string;
+    expiresAt: string;
+    calendarEmail: string;
+  }) {
+    const { error } = await this.sb.from('dm_calendar_tokens').upsert({
+      member_id: memberId,
+      household_id: householdId,
+      access_token: token.accessToken,
+      refresh_token: token.refreshToken,
+      expires_at: token.expiresAt,
+      calendar_email: token.calendarEmail,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'member_id' });
+    fail('saveCalendarToken', error);
+  }
+
+  /** Get stored calendar token for a member. */
+  async getCalendarToken(memberId: string): Promise<{
+    accessToken: string;
+    refreshToken: string;
+    expiresAt: string;
+    calendarEmail: string;
+  } | undefined> {
+    const { data } = await this.sb.from('dm_calendar_tokens').select('*').eq('member_id', memberId).maybeSingle();
+    if (!data) return undefined;
+    return {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      expiresAt: data.expires_at,
+      calendarEmail: data.calendar_email,
+    };
   }
 }
 

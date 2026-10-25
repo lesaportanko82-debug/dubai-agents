@@ -65,6 +65,9 @@ export async function transcribeVoice(fileId: string): Promise<TranscriptionResu
     };
   } catch (err) {
     console.error('Voice transcription error:', err);
+    // In production, propagate the error so the user knows transcription failed
+    // instead of silently returning fake demo text
+    if (token && openaiKey) throw err;
     return demoTranscription();
   }
 }
