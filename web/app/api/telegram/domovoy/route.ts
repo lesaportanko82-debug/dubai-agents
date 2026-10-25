@@ -5,6 +5,7 @@ import { loadRootEnv } from '@/lib/env';
 import { handleUpdate, telegramSender, tickAndFlush, flushOutbox, type TgUpdate } from '@core/domovoy/telegram';
 import { tick } from '@core/domovoy/household';
 import { getModelClient } from '@core/owed/llm';
+import { handleOnboarding } from '@core/domovoy/onboarding';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -50,35 +51,26 @@ export async function POST(req: Request) {
       // Idempotent check
       if (await db.seen(upd.update_id)) return NextResponse.json({ ok: true });
 
-      // Find which household this chat belongs to
-      const link = await db.memberByChat(chatId);
-      if (link) {
-        const store = db.store(link.household);
-        await handleUpdate(store, upd, { send, model: () => getModelClient() });
-      } else {
-        // Unknown chat — check if there's an onboarding session
-        const session = await db.session(chatId);
-        if (session.householdId) {
-          const h = await db.household(session.householdId);
-          if (h) {
-            const store = db.store(h);
-            await handleUpdate(store, upd, { send, model: () => getModelClient() });
-          }
+      // Bot username for invite links
+      const botUsername = process.env.DOMOVOY_BOT_USERNAME?.trim() || 'Domovenoklook_bot';
+
+      // Try onboarding first (handles /start, /add, /family, join/create wizards)
+      const handled = await handleOnboarding(upd, { send, db, botUsername });
+      if (!handled) {
+        // Regular message from a linked member → normal handler
+        const link = await db.memberByChat(chatId);
+        if (link) {
+          const store = db.store(link.household);
+          await handleUpdate(store, upd, { send, model: () => getModelClient() });
         } else {
-          // No household yet — for now reply with a hint (onboarding flow in Task 17)
-          const text = upd.message?.text?.trim() ?? '';
-          if (/^\/start/.test(text)) {
-            const inviteCode = text.split(/\s+/)[1];
-            if (inviteCode) {
-              const h = await db.householdByInvite(inviteCode);
-              if (h) {
-                await db.setSession(chatId, { householdId: h.id, state: { step: 'pick_member' } });
-                const store = db.store(h);
-                await handleUpdate(store, upd, { send, model: () => getModelClient() });
-                return NextResponse.json({ ok: true });
-              }
+          // Check if there's a session with a household (post-onboarding, not yet linked in dm_members)
+          const session = await db.session(chatId);
+          if (session.householdId) {
+            const h = await db.household(session.householdId);
+            if (h) {
+              const store = db.store(h);
+              await handleUpdate(store, upd, { send, model: () => getModelClient() });
             }
-            await send.sendMessage(chatId, '👋 Привет! Попросите администратора семьи прислать вам ссылку-приглашение.\n\nHi! Ask a family admin for the invite link.');
           }
         }
       }
