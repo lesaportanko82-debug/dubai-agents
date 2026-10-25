@@ -26,8 +26,8 @@ export function canAssign(m: Member, t: Task, opts: { now: string; tz?: string; 
   if (m.role === 'child') {
     if (!t.kidSafe) return { ok: false, reason: 'not a task for a child' };
     const age = m.age ?? 0;
-    const ageOk = t.skills.filter(s => m.skills.includes(s)).some(s => age >= (KID_SKILLS[s] ?? 99));
-    if (t.skills.length && !ageOk) return { ok: false, reason: `too young for ${t.skills.join('/')}` };
+    const common = t.skills.filter(s => m.skills.includes(s));
+    if (common.length && !common.some(s => age >= (KID_SKILLS[s] ?? 99))) return { ok: false, reason: `too young for ${common.join('/')}` };
     if (t.minutes > 30) return { ok: false, reason: 'too long for a child' };
   }
 
