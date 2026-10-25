@@ -23,7 +23,8 @@ const by = (id: string) => DEMO_FAMILY.find(m => m.id === id)!;
 test('child cannot get an unsafe or too-long task; can get a kid chore', () => {
   assert.equal(canAssign(by('son'), mkTask({ skills: ['drive'], kidSafe: false }), { now: NOW, openTasksToday: 0 }).ok, false);
   assert.equal(canAssign(by('son'), mkTask({ skills: ['water_plants'], kidSafe: true, minutes: 10 }), { now: NOW, openTasksToday: 0 }).ok, true);
-  assert.equal(canAssign(by('masha'), mkTask({ skills: ['feed_cat'], kidSafe: true }), { now: NOW, openTasksToday: 0 }).reason, 'too young for feed_cat');
+  assert.equal(canAssign(by('masha'), mkTask({ skills: ['feed_cat'], kidSafe: true }), { now: NOW, openTasksToday: 0 }).reason, 'missing skill');
+  assert.equal(canAssign({ ...by('masha'), skills: ['feed_cat'] }, mkTask({ skills: ['feed_cat'], kidSafe: true }), { now: NOW, openTasksToday: 0 }).reason, 'too young for feed_cat');
 });
 
 test('helper is blocked on day off and outside working hours', () => {
@@ -35,13 +36,14 @@ test('helper is blocked on day off and outside working hours', () => {
   assert.equal(canAssign(by('joy'), ok, { now: NOW, openTasksToday: 0 }).ok, true);
 });
 
-test('ranking: author is not first; fairness pushes the less-loaded adult up', () => {
-  const pickup = mkTask({ skills: ['drive'], dueAt: '2026-10-27T13:00:00.000Z', minutes: 40 });
+test('ranking: author is not first; fairness pushes the less-loaded adult up; skills are alternatives', () => {
+  const pickup = mkTask({ skills: ['drive', 'pickup_walk'], dueAt: '2026-10-27T13:00:00.000Z', minutes: 40 });
   const ctx = { now: NOW, weekMinutes: { mum: 300, dad: 60 }, openToday: {} };
   const { allowed, blocked } = rankCandidates(DEMO_FAMILY, pickup, ctx);
   assert.equal(allowed[0].memberId, 'dad');
+  assert.ok(allowed.some(c => c.memberId === 'granny')); // can walk
+  assert.ok(allowed.some(c => c.memberId === 'joy'));    // within working hours, as backup
   assert.ok(blocked.some(b => b.memberId === 'son'));
-  assert.ok(blocked.some(b => b.memberId === 'joy' && b.reason === 'missing skill'));
 });
 
 test('calendar clash blocks a member at the due time', () => {

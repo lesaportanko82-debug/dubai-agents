@@ -26,10 +26,8 @@ export function canAssign(m: Member, t: Task, opts: { now: string; tz?: string; 
   if (m.role === 'child') {
     if (!t.kidSafe) return { ok: false, reason: 'not a task for a child' };
     const age = m.age ?? 0;
-    for (const s of t.skills) {
-      const minAge = KID_SKILLS[s] ?? 99;
-      if (age < minAge) return { ok: false, reason: `too young for ${s}` };
-    }
+    const ageOk = t.skills.filter(s => m.skills.includes(s)).some(s => age >= (KID_SKILLS[s] ?? 99));
+    if (t.skills.length && !ageOk) return { ok: false, reason: `too young for ${t.skills.join('/')}` };
     if (t.minutes > 30) return { ok: false, reason: 'too long for a child' };
   }
 
@@ -39,7 +37,8 @@ export function canAssign(m: Member, t: Task, opts: { now: string; tz?: string; 
     if (m.workHours && (time < m.workHours.from || time > m.workHours.to)) return { ok: false, reason: 'outside helper working hours' };
   }
 
-  if (t.skills.length && !t.skills.every(s => m.skills.includes(s))) return { ok: false, reason: 'missing skill' };
+  // skills on a task are alternative ways to do it (drive OR walk); a member needs at least one
+  if (t.skills.length && !t.skills.some(s => m.skills.includes(s))) return { ok: false, reason: 'missing skill' };
 
   if (opts.openTasksToday >= m.dailyLimit) return { ok: false, reason: 'daily limit reached' };
 
