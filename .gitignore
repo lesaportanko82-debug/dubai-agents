@@ -5,3 +5,4 @@ evals/**/results-*.json
 web/.next
 web/node_modules
 web/next-env.d.ts
+*.tsbuildinfo
