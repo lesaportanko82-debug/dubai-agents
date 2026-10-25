@@ -40,7 +40,7 @@ test/             unit tests (no API key needed)
 ```bash
 npm install
 npm test                         # unit tests, no key needed
-cp .env.example .env             # add ANTHROPIC_API_KEY
+cp .env.example .env             # add OPENAI_API_KEY (or ANTHROPIC_API_KEY)
 npm run owed -- "Смеситель MX-210 серия 102311 течёт из-под картриджа"
 npm run eval:owed                # accuracy on the synthetic set
 ```

@@ -8,6 +8,7 @@ import { computeCaseCost } from './tools/cost.js';
 import { decide } from './tools/decide.js';
 import { withinFactoryWarranty } from './tools/warranty.js';
 import type { DefectCase } from './types.js';
+import { defaultModel } from './llm.js';
 
 /* ---------- minimal model interface (Claude Messages API shape) ---------- */
 export type ContentBlock =
@@ -100,7 +101,7 @@ export interface IntakeOptions {
 export async function runIntake(client: ModelClient, store: Store, rawText: string, opts: IntakeOptions): Promise<IntakeResult> {
   const { text, removed } = redact(rawText);
   const receivedAt = opts.receivedAt ?? new Date().toISOString();
-  const model = opts.model ?? process.env.OWED_MODEL ?? 'claude-sonnet-5-5';
+  const model = opts.model ?? defaultModel();
   const trace: TraceStep[] = [];
   let recorded: DefectCase | undefined;
   let duplicate = false;

@@ -3,6 +3,7 @@ import type { ModelClient } from './agent.js';
 import type { Store } from './store.js';
 import { assemblePack } from './tools/pack.js';
 import type { NegotiationPack } from './types.js';
+import { defaultModel } from './llm.js';
 
 /**
  * Builds a negotiation pack for one factory. Numbers are assembled in code;
@@ -14,7 +15,7 @@ export async function buildPack(
   store: Store,
   supplierCode: string,
   period: { from: string; to: string },
-  model = process.env.OWED_MODEL ?? 'claude-sonnet-5-5',
+  model = defaultModel(),
 ): Promise<NegotiationPack | null> {
   const [suppliers, batches, cases] = await Promise.all([store.suppliers(), store.batches(), store.cases()]);
   const supplier = suppliers.find(s => s.code === supplierCode);

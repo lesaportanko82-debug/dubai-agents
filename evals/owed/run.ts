@@ -1,23 +1,24 @@
 /**
  * OWED accuracy eval on synthetic complaints (RU / EN / AR / TR).
  *   npm run eval:owed
- * Requires ANTHROPIC_API_KEY. Writes evals/owed/results-<timestamp>.json
+ * Requires OPENAI_API_KEY or ANTHROPIC_API_KEY. Writes evals/owed/results-<timestamp>.json
  */
 import { readFileSync, writeFileSync } from 'node:fs';
-import { anthropicClient, runIntake } from '../../src/owed/agent.js';
+import { runIntake } from '../../src/owed/agent.js';
 import { DEMO_BATCHES, DEMO_SUPPLIERS } from '../../src/owed/fixtures.js';
 import { InMemoryStore } from '../../src/owed/store.js';
+import { getModelClient } from '../../src/owed/llm.js';
 
 interface EvalCase { id: string; text: string; expect: { class: string; batch: string | null; status: string } }
 
 const cases: EvalCase[] = readFileSync(new URL('./cases.jsonl', import.meta.url), 'utf8')
   .split('\n').filter(Boolean).map(l => JSON.parse(l));
 
-if (!process.env.ANTHROPIC_API_KEY) {
-  console.error('ANTHROPIC_API_KEY is not set.');
+if (!process.env.ANTHROPIC_API_KEY && !process.env.OPENAI_API_KEY) {
+  console.error('Set OPENAI_API_KEY or ANTHROPIC_API_KEY.');
   process.exit(1);
 }
-const client = await anthropicClient();
+const client = await getModelClient();
 const batchCode = new Map(DEMO_BATCHES.map(b => [b.id, b.code]));
 
 interface Row {
