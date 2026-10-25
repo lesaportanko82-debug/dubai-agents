@@ -107,10 +107,13 @@ export async function handleOnboarding(upd: TgUpdate, deps: OnboardingDeps): Pro
     if (/^\/panel\b/.test(text)) {
       const token = await db.createPanelSession(linked.household.id, linked.member.id);
       const host = deps.panelHost ?? 'dubai-agents.vercel.app';
+      const pin = linked.household.pin;
       await send.sendMessage(chatId,
         l === 'ru'
-          ? `📊 Веб-панель вашей семьи:\nhttps://${host}/api/domovoy/auth?token=${token}\n\nСсылка действует 30 дней.`
-          : `📊 Your family dashboard:\nhttps://${host}/api/domovoy/auth?token=${token}\n\nLink valid for 30 days.`,
+          ? `📊 Веб-панель вашей семьи:\nhttps://${host}/api/domovoy/auth?token=${token}\n\n` +
+            `Или откройте https://${host}/login/domovoy\nКод семьи: ${pin}\n\nСсылка действует 30 дней.`
+          : `📊 Your family dashboard:\nhttps://${host}/api/domovoy/auth?token=${token}\n\n` +
+            `Or open https://${host}/login/domovoy\nFamily code: ${pin}\n\nLink valid for 30 days.`,
       );
       return true;
     }
@@ -194,6 +197,13 @@ export async function handleOnboarding(upd: TgUpdate, deps: OnboardingDeps): Pro
     session = { householdId: h.id, memberId, state: {} };
     await db.setSession(chatId, session);
     await send.sendMessage(chatId, TX.created[l](h.name, h.inviteCode, botUsername));
+    // Send PIN for web panel access
+    const host = deps.panelHost ?? 'dubai-agents.vercel.app';
+    await send.sendMessage(chatId,
+      l === 'ru'
+        ? `🔑 Код доступа к веб-панели: ${h.pin}\nОткройте https://${host}/login/domovoy и введите его.\nИли используйте /panel для одноразовой ссылки.`
+        : `🔑 Web panel access code: ${h.pin}\nOpen https://${host}/login/domovoy and enter it.\nOr use /panel for a one-time link.`,
+    );
     return true;
   }
 
