@@ -8,6 +8,7 @@ import { rankCandidates, type AssignContext } from './tools/assign';
 import { dueReminders } from './tools/reminders';
 import { balanceSuggestion, weeklyLedger, weekBounds } from './tools/fairness';
 import { detectPatterns } from './memory';
+import { getWeather, analyzeWeatherAlerts, type WeatherAlert } from './integrations';
 
 /** Policy knobs (per family in production). */
 export const POLICY = {
@@ -263,6 +264,40 @@ export async function tick(store: DomovoyStore, nowIso: string) {
     await store.event({ at: nowIso, taskId: 'system', actor: 'agent', type: 'info' as any, details: { kind: 'pattern_detection' } });
   }
 
+  // ── Proactive weather check (once per hour) ──
+  const lastWeatherRun = (await store.events()).filter(e => e.type === 'info' as any && e.details?.kind === 'weather_check').pop();
+  const hoursSinceWeather = lastWeatherRun ? (now - t2(lastWeatherRun.at)) / 3_600_000 : Infinity;
+  if (hoursSinceWeather >= 1) {
+    try {
+      const weather = await getWeather({ city: 'Dubai', countryCode: 'AE' });
+      const alerts = analyzeWeatherAlerts(weather);
+      if (alerts.length > 0) {
+        // Create weather_alert insights for admins
+        const recentInsights = await store.insights({ limit: 20 });
+        const lastHourAlerts = recentInsights.filter(i => i.insightType === 'weather_alert' && t2(i.createdAt) > now - 3_600_000);
+        if (lastHourAlerts.length === 0) {
+          const taskSuggestions = alerts.flatMap((a: WeatherAlert) => a.suggestedTasks ?? []);
+          for (const m of members.filter(m => m.isAdmin)) {
+            const ins: Insight = {
+              householdId: store.householdId, insightType: 'weather_alert',
+              targetMemberId: m.id, delivered: false, createdAt: nowIso,
+              data: { alerts: alerts.map((a: WeatherAlert) => a.type), conditions: weather.current.description, temp: weather.current.temp, suggestedTasks: taskSuggestions },
+            };
+            await store.saveInsight(ins);
+            const text = formatInsight(ins, m.lang);
+            if (text) {
+              await store.send({ at: nowIso, toId: m.id, lang: m.lang, kind: 'info', text });
+              sent.push({ kind: 'insight_weather_alert', toId: m.id, text });
+            }
+          }
+        }
+      }
+      await store.event({ at: nowIso, taskId: 'system', actor: 'agent', type: 'info' as any, details: { kind: 'weather_check' } });
+    } catch (err) {
+      console.error('Weather check failed:', err);
+    }
+  }
+
   // ── Pillar 4: Generate proactive insights ──
   const insights = await generateInsights(store, members, tasks, nowIso);
   for (const ins of insights) {
@@ -408,6 +443,16 @@ function formatInsight(ins: Insight, lang: Lang): string | undefined {
       return lang === 'ru'
         ? `🔥 ${d.memberName} — ${d.streakDays} дней подряд с выполненными заданиями! Отличная серия!`
         : `🔥 ${d.memberName} — ${d.streakDays}-day streak of completed tasks! Amazing!`;
+    case 'weather_alert': {
+      const alertTypes = (d.alerts as string[]) ?? [];
+      const taskList = (d.suggestedTasks as string[]) ?? [];
+      const alertEmojis: Record<string, string> = { rain_coming: '🌧️', storm: '⛈️', extreme_heat: '🔥', cold_snap: '🥶' };
+      const emoji = alertEmojis[alertTypes[0]] ?? '🌤️';
+      const tasksStr = taskList.length > 0 ? (lang === 'ru' ? ` Советую: ${taskList.join(', ')}` : ` Suggested: ${taskList.join(', ')}`) : '';
+      return lang === 'ru'
+        ? `${emoji} Погода: ${d.conditions}, ${d.temp}°C.${tasksStr}`
+        : `${emoji} Weather: ${d.conditions}, ${d.temp}°C.${tasksStr}`;
+    }
     default:
       return undefined;
   }

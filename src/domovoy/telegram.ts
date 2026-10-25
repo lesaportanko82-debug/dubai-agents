@@ -14,6 +14,8 @@ import { runDispatch } from './agent';
 import { markDone, respond, tick, weeklyReport } from './household';
 import type { DomovoyStore } from './store';
 import type { Lang, Member, OutgoingMessage, Task } from './types';
+import { transcribeVoice } from './integrations';
+import { analyzePhoto } from './integrations';
 
 // ---------- Telegram shapes (only what we use) ----------
 export interface TgUser { id: number; first_name?: string; language_code?: string }
@@ -21,6 +23,7 @@ export interface TgChat { id: number; type: string }
 export interface TgMessage {
   message_id: number; from?: TgUser; chat: TgChat; date: number; text?: string; caption?: string;
   photo?: { file_id: string; width: number; height: number }[];
+  voice?: { file_id: string; duration: number; mime_type?: string };
 }
 export interface TgCallback { id: string; from: TgUser; message?: TgMessage; data?: string }
 export interface TgUpdate { update_id: number; message?: TgMessage; callback_query?: TgCallback }
@@ -294,14 +297,61 @@ export async function handleUpdate(store: DomovoyStore, upd: TgUpdate, deps: Tel
 
   const tasks = await store.tasks();
 
-  // ---- photo = proof ----
+  // ---- voice message → transcribe → dispatch ----
+  if (msg.voice) {
+    if (!deps.model) { await send.sendMessage(chatId, t('noModel', me.lang) as string); return; }
+    try {
+      const transcription = await transcribeVoice(msg.voice.file_id);
+      if (!transcription.text) { await send.sendMessage(chatId, me.lang === 'ru' ? '🎤 Не удалось распознать голос.' : '🎤 Could not transcribe voice.'); return; }
+      // Feed transcribed text through dispatch
+      const client = await deps.model();
+      const result = await runDispatch(client, store, me.id, transcription.text, { now, tz, mode: store.mode });
+      await flush();
+      const s = result.summary?.trim();
+      const prefix = me.lang === 'ru' ? `🎤 «${transcription.text}»\n\n` : `🎤 "${transcription.text}"\n\n`;
+      if (s && s !== '✓' && s !== '✔') await send.sendMessage(chatId, prefix + s);
+      else await send.sendMessage(chatId, prefix + '✓');
+    } catch (e: any) {
+      await send.sendMessage(chatId, `⚠️ ${e?.message ?? String(e)}`);
+    }
+    return;
+  }
+
+  // ---- photo = proof OR vision analysis → new tasks ----
   if (msg.photo?.length) {
     const task = waitingTask(tasks, me.id, ['accepted', 'assigned']);
-    if (!task) { await send.sendMessage(chatId, t('photoNoTask', me.lang) as string); return; }
     const fileId = msg.photo[msg.photo.length - 1].file_id;
-    await markDone(store, task.id, me.id, now, { proofUrl: `tg:${fileId}` });
-    await send.sendMessage(chatId, (t('done', me.lang) as any)(task.text));
-    await flush();
+    if (task) {
+      // Photo as proof for existing task
+      await markDone(store, task.id, me.id, now, { proofUrl: `tg:${fileId}` });
+      await send.sendMessage(chatId, (t('done', me.lang) as any)(task.text));
+      await flush();
+      return;
+    }
+    // No waiting task → try vision analysis to create new tasks
+    if (deps.model) {
+      try {
+        const analysis = await analyzePhoto(`tg:${fileId}`);
+        if (analysis.confidence > 0.5 && analysis.tasks.length > 0) {
+          const taskDescriptions = analysis.tasks.map(t => t.text).join(', ');
+          const client = await deps.model();
+          const result = await runDispatch(client, store, me.id, taskDescriptions, { now, tz, mode: store.mode });
+          await flush();
+          const prefix = me.lang === 'ru'
+            ? `📷 Вижу: ${analysis.description}\n\n`
+            : `📷 I see: ${analysis.description}\n\n`;
+          const s = result.summary?.trim();
+          if (s && s !== '✓' && s !== '✔') await send.sendMessage(chatId, prefix + s);
+          else await send.sendMessage(chatId, prefix + '✓');
+        } else {
+          await send.sendMessage(chatId, me.lang === 'ru' ? '📷 Не могу определить задачу по фото.' : '📷 Cannot determine a task from this photo.');
+        }
+      } catch (e: any) {
+        await send.sendMessage(chatId, t('photoNoTask', me.lang) as string);
+      }
+      return;
+    }
+    await send.sendMessage(chatId, t('photoNoTask', me.lang) as string);
     return;
   }
 

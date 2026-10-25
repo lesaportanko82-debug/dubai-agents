@@ -10,6 +10,8 @@ import { rankCandidates } from './tools/assign';
 import { assignTask, buildContext } from './household';
 import { KID_SKILLS } from './fixtures';
 import { patternContext } from './memory';
+import { getWeather, analyzeWeatherAlerts, formatWeatherForAgent } from './integrations';
+import { checkCalendar, checkFamilyCalendars } from './integrations';
 
 function hourIn(iso: string, tz: string): number {
   return parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', hour12: false }).format(new Date(iso)));
@@ -54,6 +56,15 @@ const SetReminderIn = z.object({
 const EvaluateAlternativesIn = z.object({
   task_id: z.string(),
   criteria: z.string().optional(),
+});
+
+const CheckWeatherIn = z.object({
+  city: z.string().optional(),
+  country_code: z.string().optional(),
+});
+const CheckCalendarIn = z.object({
+  member_id: z.string().optional(),
+  hours_ahead: z.number().optional(),
 });
 
 export const DISPATCH_TOOLS: ToolDef[] = [
@@ -126,6 +137,28 @@ export const DISPATCH_TOOLS: ToolDef[] = [
         },
       },
       required: ['tasks'],
+    },
+  },
+  {
+    name: 'check_weather',
+    description: 'Get current weather + 12h forecast for the family location. Returns conditions, alerts (rain, storm, extreme heat) and proactive task suggestions (bring laundry in, take umbrella, etc.).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        city: { type: 'string', description: 'City name (default: family location from household settings)' },
+        country_code: { type: 'string', description: 'ISO country code (default: AE)' },
+      },
+    },
+  },
+  {
+    name: 'check_calendar',
+    description: 'Check Google Calendar availability for a family member (or all members). Shows busy/free slots, current status, and next free time. Use before assigning time-sensitive tasks.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        member_id: { type: 'string', description: 'Specific member ID, or omit to check all members' },
+        hours_ahead: { type: 'number', description: 'Hours to look ahead (default: 8)' },
+      },
     },
   },
   {
@@ -259,6 +292,26 @@ export async function runDispatch(client: ModelClient, store: DomovoyStore, auth
         return { ...c, member_name: members.find(x => x.id === c.memberId)?.name, pattern_hints: hints };
       });
       return { task_id, candidates: enriched, blocked, criteria: criteria ?? 'default ranking + patterns' };
+    }
+    if (name === 'check_weather') {
+      const { city, country_code } = CheckWeatherIn.parse(input);
+      const weather = await getWeather({ city: city ?? 'Dubai', countryCode: country_code ?? 'AE' });
+      const alerts = analyzeWeatherAlerts(weather);
+      return formatWeatherForAgent(weather, alerts);
+    }
+    if (name === 'check_calendar') {
+      const { member_id, hours_ahead } = CheckCalendarIn.parse(input);
+      const hoursAhead = hours_ahead ?? 8;
+      const from = now;
+      const to = new Date(new Date(now).getTime() + hoursAhead * 3_600_000).toISOString();
+      if (member_id) {
+        const m = members.find(x => x.id === member_id);
+        if (!m) throw new Error('unknown member_id');
+        const avail = await checkCalendar({ memberId: m.id, memberName: m.name, calendarId: (m as any).calendarId, from, to });
+        return avail;
+      }
+      const calMembers = members.map(m => ({ id: m.id, name: m.name, calendarId: (m as any).calendarId }));
+      return await checkFamilyCalendars(calMembers, from, to);
     }
     if (name === 'propose_tasks') {
       const { tasks } = ProposeIn.parse(input);

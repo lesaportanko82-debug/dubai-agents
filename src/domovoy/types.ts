@@ -178,7 +178,7 @@ export interface Reminder {
 
 export type InsightType =
   | 'morning_briefing' | 'rebalance_suggestion' | 'conflict_warning' | 'pattern_prediction'
-  | 'streak_alert' | 'idle_member' | 'overload_warning' | 'weekly_digest';
+  | 'streak_alert' | 'idle_member' | 'overload_warning' | 'weekly_digest' | 'weather_alert';
 
 export interface Insight {
   id?: number;
