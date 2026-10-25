@@ -10,6 +10,9 @@ import { rankCandidates } from './tools/assign';
 import { assignTask, buildContext } from './household';
 import { KID_SKILLS } from './fixtures';
 
+/** Rate limits: max tasks an author may create per hour. */
+const RATE_LIMIT: Record<string, number> = { child: 5, adult: 15, elder: 15, helper: 15 };
+
 const ProposeIn = z.object({
   tasks: z.array(z.object({
     text: z.string().min(2).max(140),
@@ -22,6 +25,7 @@ const ProposeIn = z.object({
     urgent: z.boolean().optional(),
     about_member_id: z.string().optional(),
     needs_proof: z.boolean().optional(),
+    private: z.boolean().optional(),
   })).min(1).max(8),
 });
 const AssignIn = z.object({ task_id: z.string(), member_id: z.string(), reason: z.string().min(3).max(200), message: z.string().min(3).max(400) });
@@ -45,6 +49,7 @@ export const DISPATCH_TOOLS: ToolDef[] = [
               urgent: { type: 'boolean', description: 'Time-critical: picking up a person, medicine, a fixed appointment' },
               about_member_id: { type: 'string', description: 'If the task is about a family member (take granny to the clinic), their id — they will not be the executor' },
               needs_proof: { type: 'boolean', description: 'A photo is required to close it (author asked for proof, or outcome is hard to verify)' },
+              private: { type: 'boolean', description: 'Private task: visible only to author, assignee, and admins. Auto-set for aboutMemberId tasks.' },
             },
             required: ['text', 'minutes', 'skills', 'kid_safe'],
           },
@@ -107,13 +112,25 @@ export async function runDispatch(client: ModelClient, store: DomovoyStore, auth
     }
     if (name === 'propose_tasks') {
       const { tasks } = ProposeIn.parse(input);
+
+      // Rate limit: count tasks created by this author in the last hour
+      const allTasks = await store.tasks();
+      const hourAgo = new Date(new Date(now).getTime() - 3_600_000).toISOString();
+      const recentCount = allTasks.filter(t => t.authorId === authorId && t.createdAt >= hourAgo).length;
+      const limit = RATE_LIMIT[author!.role] ?? 15;
+      if (recentCount + tasks.length > limit) {
+        throw new Error(`Rate limit: ${author!.role} can create max ${limit} tasks/hour. Already created ${recentCount} in the last hour.`);
+      }
+
       const ctx = await buildContext(store, now, tz);
+      ctx.existingTasks = allTasks;
       const out = [];
       for (const p of tasks) {
         const t: Task = {
           id: 't-' + randomUUID().slice(0, 8), authorId, text: redact(p.text).text, dueAt: p.due_at, place: p.place, minutes: p.minutes, skills: p.skills,
           kidSafe: p.kid_safe, recurring: p.recurring, candidateIds: [], declinedBy: [], status: 'new', reminderLevel: 0, createdAt: now,
           urgent: p.urgent, aboutMemberId: p.about_member_id, needsProof: p.needs_proof,
+          private: p.private || !!p.about_member_id || undefined,
         };
         const { allowed, blocked } = rankCandidates(members, t, ctx);
         t.candidateIds = allowed.map(c => c.memberId);
@@ -121,7 +138,12 @@ export async function runDispatch(client: ModelClient, store: DomovoyStore, auth
         await store.event({ at: now, taskId: t.id, actor: authorId, type: 'created', details: { text: t.text } });
         for (const b of blocked) await store.event({ at: now, taskId: t.id, actor: 'agent', type: 'blocked', details: b });
         created.push(t);
-        out.push({ task_id: t.id, text: t.text, allowed: allowed.map(c => ({ member_id: c.memberId, score: c.score, why: c.reasons })), blocked });
+        out.push({ task_id: t.id, text: t.text, allowed: allowed.map(c => {
+          const mem = members.find(x => x.id === c.memberId)!;
+          const open = ctx.openToday[c.memberId] ?? 0;
+          const nearLimit = open >= mem.dailyLimit - 1;
+          return { member_id: c.memberId, score: c.score, why: c.reasons, ...(nearLimit ? { near_limit: true, open_today: open, daily_limit: mem.dailyLimit } : {}) };
+        }), blocked });
       }
       return { tasks: out };
     }

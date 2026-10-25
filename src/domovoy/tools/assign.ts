@@ -10,6 +10,8 @@ export interface AssignContext {
   openToday: Record<string, number>;
   /** declines and silences this week per member — frequent decliners get offered first next time */
   weekDeclines?: Record<string, number>;
+  /** all current tasks — used for dueAt collision detection */
+  existingTasks?: Task[];
 }
 
 /**
@@ -22,7 +24,7 @@ export function rankCandidates(members: Member[], task: Task, ctx: AssignContext
   const adultsAvg = avg(members.filter(m => m.role === 'adult').map(m => ctx.weekMinutes[m.id] ?? 0));
 
   for (const m of members) {
-    const r = canAssign(m, task, { now: ctx.now, tz: ctx.tz, openTasksToday: ctx.openToday[m.id] ?? 0 });
+    const r = canAssign(m, task, { now: ctx.now, tz: ctx.tz, openTasksToday: ctx.openToday[m.id] ?? 0, existingTasks: ctx.existingTasks });
     if (!r.ok) { blocked.push({ memberId: m.id, reason: r.reason! }); continue; }
 
     let score = 50;

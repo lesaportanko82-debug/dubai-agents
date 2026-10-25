@@ -6,9 +6,18 @@ import { tick } from '@core/domovoy/household';
 
 export const dynamic = 'force-dynamic';
 
-/** Scheduler endpoint: call it every few minutes (external cron). Delivers to Telegram when the bot is configured. */
-export async function GET() {
+/** Scheduler endpoint: called by Vercel Cron every 5 min. Protected by CRON_SECRET. */
+export async function GET(req: Request) {
   loadRootEnv();
+
+  // Vercel Cron sends Authorization: Bearer <CRON_SECRET>
+  const cronSecret = process.env.CRON_SECRET?.trim();
+  if (cronSecret) {
+    const auth = req.headers.get('authorization');
+    if (auth !== `Bearer ${cronSecret}`) {
+      return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+    }
+  }
   const tok = process.env.DOMOVOY_TELEGRAM_TOKEN?.trim();
   const db = getDomovoyDb();
 

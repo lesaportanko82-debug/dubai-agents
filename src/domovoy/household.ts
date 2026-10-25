@@ -65,6 +65,20 @@ export async function assignTask(store: DomovoyStore, task: Task, memberId: stri
   await store.event({ at: nowIso, taskId: task.id, actor: 'agent', type: 'assigned', details: { to: memberId, reason } });
   const text = message?.trim() || (ASSIGN_TEXT[m.lang] ?? ASSIGN_TEXT.en)(task, m, store.tz);
   await store.send({ at: nowIso, toId: m.id, lang: m.lang, text, kind: 'assignment', taskId: task.id });
+
+  // Soft-limit warning: notify author when assignee is near their daily limit
+  const day = nowIso.slice(0, 10);
+  const allTasks = await store.tasks();
+  const openToday = allTasks.filter(t => t.assigneeId === memberId && ['assigned', 'accepted'].includes(t.status) && (t.dueAt ?? t.createdAt).slice(0, 10) === day).length;
+  if (openToday >= m.dailyLimit - 1 && task.authorId !== memberId) {
+    const author = members.find(x => x.id === task.authorId);
+    if (author) {
+      await store.send({ at: nowIso, toId: author.id, lang: author.lang, kind: 'info', taskId: task.id,
+        text: say(author.lang,
+          `⚠️ ${m.name} сегодня уже ${openToday}/${m.dailyLimit} дел — почти на пределе.`,
+          `⚠️ ${m.name} has ${openToday}/${m.dailyLimit} tasks today — near limit.`) });
+    }
+  }
   return task;
 }
 
@@ -72,6 +86,7 @@ export async function assignTask(store: DomovoyStore, task: Task, memberId: stri
 async function swapToNext(store: DomovoyStore, t: Task, from: string, nowIso: string, why: string) {
   const members = await store.members();
   const ctx = await buildContext(store, nowIso);
+  ctx.existingTasks = await store.tasks();
   const { allowed } = rankCandidates(members, { ...t, assigneeId: undefined }, ctx);
   t.candidateIds = allowed.map(c => c.memberId);
   if (!allowed.length) {

@@ -216,7 +216,7 @@ test('frequent decliners get offered first next time', async () => {
   await store.event({ at: NOW, taskId: 'y', actor: 'dad', type: 'declined' });
   const ctx = await buildContext(store, NOW);
   assert.equal(ctx.weekDeclines?.dad, 2);
-  const { allowed } = rankCandidates(DEMO_FAMILY, mkTask({ skills: ['shop'], dueAt: '2026-10-27T19:00:00.000Z' }), ctx); // 23:00 Dubai: helper off hours
+  const { allowed } = rankCandidates(DEMO_FAMILY, mkTask({ skills: ['shop'], dueAt: '2026-10-27T11:00:00.000Z' }), ctx); // 15:00 Dubai: within default hours, helper may be off
   assert.equal(allowed[0].memberId, 'dad');
   assert.ok(allowed[0].reasons.includes('declined earlier this week, their turn'));
 });
@@ -298,4 +298,37 @@ test('telegram: link via /start, assignment delivered with buttons, button accep
   const u = msgUpd(222, '/tasks', 42);
   await handleUpdate(store, u, deps); const n = sent.length;
   await handleUpdate(store, u, deps); assert.equal(sent.length, n);
+});
+
+test('dueAt collision blocks assignment when tasks overlap', () => {
+  const existing: Task[] = [
+    mkTask({ id: 'e1', assigneeId: 'dad', status: 'accepted', dueAt: '2026-10-27T12:00:00.000Z', minutes: 30 }),
+  ];
+  // Task overlapping with existing (± minutes/2 window)
+  const overlapping = mkTask({ id: 't2', dueAt: '2026-10-27T12:10:00.000Z', minutes: 20 });
+  const r1 = canAssign(by('dad'), overlapping, { now: NOW, openTasksToday: 0, existingTasks: existing });
+  assert.equal(r1.ok, false);
+  assert.match(r1.reason!, /time collision/);
+
+  // Task that does NOT overlap (well after)
+  const noOverlap = mkTask({ id: 't3', dueAt: '2026-10-27T14:00:00.000Z', minutes: 20 });
+  const r2 = canAssign(by('dad'), noOverlap, { now: NOW, openTasksToday: 0, existingTasks: existing });
+  assert.equal(r2.ok, true);
+
+  // No collision without existingTasks
+  const r3 = canAssign(by('dad'), overlapping, { now: NOW, openTasksToday: 0 });
+  assert.equal(r3.ok, true);
+});
+
+test('rankCandidates passes existingTasks and blocks colliding members', () => {
+  const existing: Task[] = [
+    mkTask({ id: 'e1', assigneeId: 'dad', status: 'assigned', dueAt: '2026-10-27T12:00:00.000Z', minutes: 30 }),
+  ];
+  const task = mkTask({ id: 't2', authorId: 'mum', dueAt: '2026-10-27T12:05:00.000Z', minutes: 20 });
+  const ctx = { now: NOW, tz: 'Asia/Dubai', weekMinutes: {} as Record<string, number>, openToday: {} as Record<string, number>, existingTasks: existing };
+  const { allowed, blocked } = rankCandidates(DEMO_FAMILY, task, ctx);
+  // dad should be blocked due to collision
+  assert.ok(blocked.some(b => b.memberId === 'dad' && /time collision/.test(b.reason)));
+  // dad should NOT be in allowed
+  assert.ok(!allowed.some(c => c.memberId === 'dad'));
 });

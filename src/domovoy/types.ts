@@ -22,6 +22,8 @@ export interface Member {
   isAdmin?: boolean;
   /** how the bot talks to this person */
   messageStyle: MessageStyle;
+  /** weekly availability: array of { day: 0..6 (Mon=0), from: "HH:MM", to: "HH:MM" }. Default 08:00–22:00 every day. */
+  availability?: { day: number; from: string; to: string }[];
 }
 
 export type TaskStatus = 'new' | 'assigned' | 'accepted' | 'done' | 'declined' | 'unassigned' | 'cancelled';
@@ -54,6 +56,8 @@ export interface Task {
   proofUrl?: string;
   /** set when the assignee proposed a later time and the task was moved */
   rescheduledFrom?: string;
+  /** private: visible only to author, assignee, and admins (auto-set for aboutMemberId tasks) */
+  private?: boolean;
 }
 
 export interface TaskEvent {

@@ -23,12 +23,14 @@ const memberFromRow = (r: Row): Member => ({
   workHours: r.work_from && r.work_to ? { from: r.work_from, to: r.work_to } : undefined,
   busy: r.busy ?? [], dailyLimit: r.daily_limit ?? 3, isAdmin: !!r.is_admin,
   messageStyle: (r.message_style as MessageStyle) ?? 'direct',
+  availability: r.availability?.length ? r.availability : undefined,
 });
 const memberToRow = (householdId: string, m: Member): Row => ({
   id: m.id, household_id: householdId, name: m.name, role: m.role, age: m.age ?? null, lang: m.lang,
   telegram_chat_id: m.telegramId ?? null, skills: m.skills, day_off: m.dayOff ?? [], work_from: m.workHours?.from ?? null, work_to: m.workHours?.to ?? null,
   busy: m.busy ?? [], daily_limit: m.dailyLimit, is_admin: !!m.isAdmin,
   message_style: m.messageStyle ?? 'direct',
+  availability: m.availability ?? [],
 });
 const householdFromRow = (r: Row): Household => ({ id: r.id, name: r.name, tz: r.tz, lang: r.lang, inviteCode: r.invite_code, pin: r.pin ?? '', mode: (r.mode as HouseholdMode) ?? 'classic' });
 

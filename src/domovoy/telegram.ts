@@ -132,6 +132,13 @@ function keyboardFor(msg: OutgoingMessage, m: Member, task?: Task): Button[][] |
     return [row];
   }
   if (msg.kind === 'reminder') return [[{ text: t('btnDone', l), data: `f:${msg.taskId}` }]];
+  // Unassigned task: show action buttons to author
+  if (msg.kind === 'info' && task?.status === 'unassigned') {
+    return [[
+      { text: l === 'ru' ? '📅 На завтра' : '📅 Tomorrow', data: `mv:${msg.taskId}` },
+      { text: l === 'ru' ? '❌ Отменить' : '❌ Cancel', data: `cx:${msg.taskId}` },
+    ]];
+  }
   return undefined;
 }
 
@@ -192,6 +199,22 @@ export async function handleUpdate(store: DomovoyStore, upd: TgUpdate, deps: Tel
       else if (op === 'd' && task) { const r = await respond(store, task.id, me.id, 'decline', now); await send.answerCallback(cq.id); await send.sendMessage(chatId, (t('declined', me.lang) as any)(task.text, nameOf(members, r.swappedTo))); }
       else if (op === 'l' && task) { const r = await respond(store, task.id, me.id, 'decline', now, { proposeAt: new Date(Date.parse(now) + 2 * 3_600_000).toISOString() }); await send.answerCallback(cq.id); if (!r.rescheduled) await send.sendMessage(chatId, (t('declined', me.lang) as any)(task.text, nameOf(members, r.swappedTo))); }
       else if (op === 'f' && task) { const r = await markDone(store, task.id, me.id, now); await send.answerCallback(cq.id); if (!r.needProof) await send.sendMessage(chatId, (t('done', me.lang) as any)(task.text)); }
+      else if (op === 'mv' && task && task.status === 'unassigned') {
+        // Move to tomorrow: reschedule dueAt to same time next day, reset state to 'new'
+        const tmrw = new Date(Date.parse(now) + 86_400_000);
+        if (task.dueAt) { const d = new Date(task.dueAt); d.setDate(d.getDate() + 1); task.dueAt = d.toISOString(); }
+        else task.dueAt = tmrw.toISOString();
+        task.rescheduledFrom = now; task.status = 'new'; task.declinedBy = []; task.candidateIds = [];
+        await store.saveTask(task); await store.event({ at: now, taskId: task.id, actor: me.id, type: 'rescheduled', details: { to: task.dueAt } });
+        await send.answerCallback(cq.id, '📅');
+        await send.sendMessage(chatId, me.lang === 'ru' ? `Перенесено на завтра: «${task.text}»` : `Moved to tomorrow: "${task.text}"`);
+      }
+      else if (op === 'cx' && task && task.status === 'unassigned') {
+        task.status = 'cancelled';
+        await store.saveTask(task); await store.event({ at: now, taskId: task.id, actor: me.id, type: 'blocked', details: { reason: 'cancelled by author' } });
+        await send.answerCallback(cq.id, '❌');
+        await send.sendMessage(chatId, me.lang === 'ru' ? `Отменено: «${task.text}»` : `Cancelled: "${task.text}"`);
+      }
       else await send.answerCallback(cq.id);
       if (cq.message && task) await send.clearKeyboard(chatId, cq.message.message_id);
     } catch { await send.answerCallback(cq.id, '⌛'); }
@@ -230,6 +253,42 @@ export async function handleUpdate(store: DomovoyStore, upd: TgUpdate, deps: Tel
   if (/^\/report/.test(text)) {
     const { rows, suggestion } = await weeklyReport(store, now, me.lang === 'ru' ? 'ru' : 'en');
     await send.sendMessage(chatId, rows.map(r => `${r.name}: ${r.minutes} ${me.lang === 'ru' ? 'мин' : 'min'}, ${r.tasks} ${me.lang === 'ru' ? 'дел' : 'tasks'}`).join('\n') + '\n\n' + suggestion);
+    return;
+  }
+
+  // ---- /busy HH:MM-HH:MM — add a one-time busy slot ----
+  const busyMatch = text.match(/^\/busy\s+(\d{1,2}[:.:]\d{2})\s*[-–]\s*(\d{1,2}[:.:]\d{2})(?:\s+(.+))?/i);
+  if (busyMatch) {
+    const [, from, to, what] = busyMatch;
+    const fromNorm = from.replace('.', ':');
+    const toNorm = to.replace('.', ':');
+    const today = now.slice(0, 10);
+    const fromIso = today + 'T' + fromNorm.padStart(5, '0') + ':00';
+    const toIso = today + 'T' + toNorm.padStart(5, '0') + ':00';
+    me.busy.push({ from: fromIso, to: toIso, what: what?.trim() });
+    await store.saveMember(me);
+    await send.sendMessage(chatId, me.lang === 'ru' ? `Записал: занят ${fromNorm}–${toNorm}${what ? ' (' + what.trim() + ')' : ''}.` : `Noted: busy ${fromNorm}–${toNorm}${what ? ' (' + what.trim() + ')' : ''}.`);
+    return;
+  }
+
+  // ---- /free — clear today's busy slots ----
+  if (/^\/free/.test(text)) {
+    const today = now.slice(0, 10);
+    me.busy = me.busy.filter(b => !b.from.startsWith(today));
+    await store.saveMember(me);
+    await send.sendMessage(chatId, me.lang === 'ru' ? 'Все занятости на сегодня сброшены.' : 'All busy slots for today cleared.');
+    return;
+  }
+
+  // ---- /calendar — show current availability and busy slots ----
+  if (/^\/calendar/.test(text)) {
+    const slots = me.availability?.length
+      ? me.availability.map(a => { const days = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс']; return `${me.lang === 'ru' ? days[a.day] : ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][a.day]} ${a.from}–${a.to}`; }).join('\n')
+      : (me.lang === 'ru' ? 'По умолчанию: 08:00–22:00 каждый день' : 'Default: 08:00–22:00 every day');
+    const busyList = me.busy.length
+      ? '\n' + (me.lang === 'ru' ? 'Занятости:' : 'Busy:') + '\n' + me.busy.map(b => `${b.from.slice(11,16)}–${b.to.slice(11,16)} ${b.what ?? ''}`).join('\n')
+      : '';
+    await send.sendMessage(chatId, (me.lang === 'ru' ? '📅 Расписание:\n' : '📅 Schedule:\n') + slots + busyList);
     return;
   }
 
@@ -297,7 +356,23 @@ export async function tickAndFlush(store: DomovoyStore, send: TgSender, nowIso =
 
 /** Thin fetch-based Telegram Bot API client. */
 export function telegramSender(token: string): TgSender {
-  const api = (method: string, body: unknown) => fetch(`https://api.telegram.org/bot${token}/${method}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(r => r.json()).catch(() => undefined);
+  const api = async (method: string, body: unknown) => {
+    const url = `https://api.telegram.org/bot${token}/${method}`;
+    const opts: RequestInit = { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) };
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        const r = await fetch(url, opts);
+        if (r.ok || (r.status < 500 && r.status !== 429)) return r.json();
+        // 429 — respect Retry-After; 5xx — exponential backoff
+        const ra = r.headers.get('retry-after');
+        const delay = ra ? Math.min(Number(ra) * 1000, 10_000) : Math.min(1000 * 2 ** attempt, 8000);
+        if (attempt < 3) await new Promise(ok => setTimeout(ok, delay));
+        continue;
+      } catch { /* network error — retry with backoff */ }
+      if (attempt < 3) await new Promise(ok => setTimeout(ok, Math.min(1000 * 2 ** attempt, 8000)));
+    }
+    return undefined;
+  };
   return {
     async sendMessage(chatId, text, keyboard) {
       await api('sendMessage', { chat_id: chatId, text, reply_markup: keyboard ? { inline_keyboard: keyboard.map(r => r.map(b => ({ text: b.text, callback_data: b.data }))) } : undefined });

@@ -5,7 +5,7 @@ import { Avatar } from '@/components/domovoy/Member';
 import { hhmm } from '@core/domovoy/household';
 import { reasonText } from '@/lib/reasons';
 import type { Task } from '@core/domovoy/types';
-import { respondAction, doneAction, tickAction } from '../actions';
+import { respondAction, doneAction, tickAction, rescheduleAction, cancelAction } from '../actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,8 +19,10 @@ const COLS: { key: string; statuses: Task['status'][]; ru: string; en: string }[
 export default async function TasksPage() {
   const lang = await getLang();
   const ru = lang === 'ru';
-  const { store } = await panelContext();
-  const [members, tasks] = await Promise.all([store.members(), store.tasks()]);
+  const { store, member: me } = await panelContext();
+  const [members, allTasks] = await Promise.all([store.members(), store.tasks()]);
+  // Privacy filter: private tasks visible only to author, assignee, and admins
+  const tasks = allTasks.filter(t => !t.private || me?.isAdmin || t.authorId === me?.id || t.assigneeId === me?.id);
   const byId = new Map(members.map(m => [m.id, m]));
   const btn = 'rounded-md px-2 py-1 text-[12px] font-medium border';
 
@@ -54,6 +56,7 @@ export default async function TasksPage() {
                         {t.kidSafe && <Pill tone="accent">{ru ? 'для ребёнка' : 'kid-safe'}</Pill>}
                         {t.urgent && <Pill tone="bad">{ru ? 'срочное' : 'urgent'}</Pill>}
                         {t.needsProof && <Pill tone="info">{ru ? 'нужно фото' : 'photo required'}</Pill>}
+                        {t.private && <Pill tone="info">{ru ? '🔒 приватное' : '🔒 private'}</Pill>}
                         {t.rescheduledFrom && <span title={ru ? 'перенесено' : 'rescheduled'}>↷ {hhmm(t.rescheduledFrom)}</span>}
                         {t.reminderLevel > 0 && <span title={ru ? 'уровень напоминания' : 'reminder level'}>{'●'.repeat(t.reminderLevel)}{'○'.repeat(3 - t.reminderLevel)}</span>}
                       </div>
