@@ -21,6 +21,7 @@ export function defaultModel(): string {
 /* ---------- OpenAI Chat Completions adapter (no SDK, plain fetch) ---------- */
 export function openAiClient(apiKey = process.env.OPENAI_API_KEY, baseUrl = 'https://api.openai.com/v1'): ModelClient {
   if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
+  if (!/^[\x21-\x7e]+$/.test(apiKey.trim())) throw new Error('OPENAI_API_KEY looks wrong: it contains spaces or non-Latin characters. Paste the real key (starts with sk-).');
   return {
     async create(req) {
       const body: Record<string, unknown> = {
