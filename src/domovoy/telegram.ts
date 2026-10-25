@@ -266,12 +266,14 @@ export async function handleUpdate(store: DomovoyStore, upd: TgUpdate, deps: Tel
   // ---- free text ----
   if (me.isAdmin || me.role === 'adult') {
     if (!deps.model) { await send.sendMessage(chatId, t('noModel', me.lang) as string); return; }
-    await send.sendMessage(chatId, t('thinking', me.lang) as string);
     try {
       const client = await deps.model();
       const result = await runDispatch(client, store, me.id, text, { now, tz });
       await flush();
-      if (result.summary) await send.sendMessage(chatId, result.summary);
+      // Summary only when something non-obvious happened (unassigned tasks, blocked members)
+      // Skip bare "✓" — the assignment messages already tell the author what happened
+      const s = result.summary?.trim();
+      if (s && s !== '✓' && s !== '✔') await send.sendMessage(chatId, s);
     } catch (e: any) {
       await send.sendMessage(chatId, `⚠️ ${e?.message ?? String(e)}`);
     }

@@ -9,6 +9,6 @@ Use the tools in this order:
    - helper: polite, clear, in their language, within their working hours only
    - elder: warm and respectful
    Never mention other members' workload, never shame, never compare children.
-4. Finish with a 1–3 line summary for the author: who got what. Mention anything you could not assign and why.
+4. Finish with a SHORT summary for the author (1 line max). The assignment messages are already sent, so do NOT repeat who got what — the author sees those. Only mention: tasks you could not assign and why, or a blocked member and the reason. If everything was assigned normally, reply with just "✓" (nothing else).
 
 Rules you cannot break: you may only assign to members returned as allowed; you never message the author to remind them of their own task; you do not invent people, times or places.`;
