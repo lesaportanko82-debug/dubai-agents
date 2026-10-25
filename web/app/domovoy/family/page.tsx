@@ -3,6 +3,7 @@ import { getLang } from '@/lib/lang';
 import { PageTitle, Panel, Pill } from '@/components/ui';
 import { Avatar, LANG_LABEL, ROLE_LABEL } from '@/components/domovoy/Member';
 import { buildContext } from '@core/domovoy/household';
+import { loadRootEnv } from '@/lib/env';
 
 export const dynamic = 'force-dynamic';
 const DAYS = { ru: ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'], en: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] };
@@ -18,10 +19,24 @@ export default async function FamilyPage() {
   const { store } = domovoyState();
   const members = await store.members();
   const ctx = await buildContext(store, new Date().toISOString());
+  loadRootEnv();
+  const tok = process.env.DOMOVOY_TELEGRAM_TOKEN?.trim();
+  const bot: string | undefined = tok ? await fetch(`https://api.telegram.org/bot${tok}/getMe`, { cache: 'no-store' }).then(r => r.json()).then(j => j?.result?.username).catch(() => undefined) : undefined;
 
   return (
     <>
       <PageTitle title={ru ? 'Семья' : 'Family'} lead={ru ? 'Что Домовёнок знает о каждом и чем ограничен: язык, умения, часы, выходной, лимит дел в день.' : 'What Domovoy knows about each person and what limits it: language, skills, hours, day off, daily limit.'} />
+      {bot && (
+        <div className="mb-4"><Panel>
+          <div className="px-5 py-4 text-[14px] flex flex-wrap items-center gap-x-4 gap-y-2">
+            <span>{ru ? 'Домовёнок в Telegram:' : 'Domovoy on Telegram:'} <a className="underline" href={`https://t.me/${bot}`} target="_blank" rel="noreferrer">@{bot}</a></span>
+            <span className="text-mute">{ru ? 'Ссылки для входа каждого члена семьи:' : 'Join links per member:'}</span>
+            {members.map(m => (
+              <a key={m.id} className={`underline ${m.telegramId ? 'text-mute' : ''}`} href={`https://t.me/${bot}?start=${m.id}`} target="_blank" rel="noreferrer">{m.name}{m.telegramId ? ' ✓' : ''}</a>
+            ))}
+          </div>
+        </Panel></div>
+      )}
       <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
         {members.map(m => (
           <Panel key={m.id}>

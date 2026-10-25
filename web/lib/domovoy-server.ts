@@ -8,7 +8,7 @@ import type { Task } from '@core/domovoy/types';
 import type { DispatchResult } from '@core/domovoy/agent';
 
 export interface DomovoyRun { id: string; at: string; authorId: string; input: string; result: DispatchResult }
-interface State { store: InMemoryDomovoyStore; runs: DomovoyRun[] }
+interface State { store: InMemoryDomovoyStore; runs: DomovoyRun[]; seenUpdates: Set<number>; lastTick?: number }
 
 declare global {
   // eslint-disable-next-line no-var
@@ -19,7 +19,7 @@ export function domovoyState(): State {
   if (!globalThis.__domovoyState) {
     const store = new InMemoryDomovoyStore(DEMO_FAMILY.map(m => ({ ...m, busy: [...m.busy] })));
     seed(store);
-    globalThis.__domovoyState = { store, runs: [] };
+    globalThis.__domovoyState = { store, runs: [], seenUpdates: new Set() };
   }
   return globalThis.__domovoyState;
 }

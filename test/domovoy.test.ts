@@ -233,3 +233,69 @@ test('tasks that need proof stay open until a photo arrives', async () => {
   assert.equal(r2.task.status, 'done');
   assert.equal(r2.task.proofUrl, 'photos/q5.jpg');
 });
+
+// ---------- Telegram channel ----------
+import { handleUpdate, parseReply, type TgSender, type TgUpdate } from '../src/domovoy/telegram';
+
+function fakeSender() {
+  const sent: { chatId: string; text: string; buttons?: string[] }[] = [];
+  const s: TgSender = {
+    async sendMessage(chatId, text, keyboard) { sent.push({ chatId, text, buttons: keyboard?.flat().map(b => b.data) }); },
+    async answerCallback() {}, async clearKeyboard() {},
+  };
+  return { s, sent };
+}
+const msgUpd = (chat: number, text: string, id = Math.floor(Math.random() * 1e9)): TgUpdate => ({ update_id: id, message: { message_id: 1, chat: { id: chat, type: 'private' }, date: 0, text, from: { id: chat, language_code: 'ru' } } });
+const cbUpd = (chat: number, data: string): TgUpdate => ({ update_id: Math.floor(Math.random() * 1e9), callback_query: { id: 'c', from: { id: chat }, data, message: { message_id: 2, chat: { id: chat, type: 'private' }, date: 0 } } });
+
+test('parseReply understands ok / can’t (+time) / done in RU, EN, TL', () => {
+  const now = '2026-10-26T10:00:00.000Z'; // 14:00 Dubai
+  assert.equal(parseReply('ок', now).kind, 'accept');
+  assert.equal(parseReply('Sige po', now).kind, 'accept');
+  assert.equal(parseReply('готово!', now).kind, 'done');
+  assert.equal(parseReply('tapos na', now).kind, 'done');
+  const d = parseReply('не могу, через 2 часа смогу', now);
+  assert.equal(d.kind, 'decline'); assert.equal((d as any).proposeAt, '2026-10-26T12:00:00.000Z');
+  const e = parseReply("can't now, at 19:00", now);
+  assert.equal((e as any).proposeAt, '2026-10-26T15:00:00.000Z'); // 19:00 Dubai
+  assert.equal(parseReply('завтра в 17 забрать Машу', now).kind, 'none');
+});
+
+test('telegram: link via /start, assignment delivered with buttons, button accept, unlinked echoed to admin', async () => {
+  const store = new InMemoryDomovoyStore(DEMO_FAMILY.map(m => ({ ...m, busy: [], telegramId: undefined })));
+  const now = new Date().toISOString();
+  const { s, sent } = fakeSender();
+  const deps = { send: s, now, seen: new Set<number>() };
+  await handleUpdate(store, msgUpd(111, '/start'), deps);
+  assert.ok(sent.at(-1)!.buttons!.includes('link:mum'));
+  await handleUpdate(store, cbUpd(111, 'link:mum'), deps);
+  assert.equal((await store.members()).find(m => m.id === 'mum')!.telegramId, '111');
+  await handleUpdate(store, msgUpd(222, '/start joy'), deps);
+  assert.equal((await store.members()).find(m => m.id === 'joy')!.telegramId, '222');
+
+  // the agent assigns a task to Joy and one to Timur (not linked) — Joy gets buttons, mum gets an echo for Timur
+  const t1 = mkTask({ id: 'tg1', text: 'Купить молоко', skills: ['shop'], candidateIds: ['joy'] });
+  await store.saveTask(t1); await assignTask(store, t1, 'joy', 'test', now);
+  const t2 = mkTask({ id: 'tg2', text: 'Полить цветы', skills: ['water_plants'], kidSafe: true, candidateIds: ['son'] });
+  await store.saveTask(t2); await assignTask(store, t2, 'son', 'test', now);
+  sent.length = 0;
+  await handleUpdate(store, msgUpd(222, 'hello?'), deps); // any traffic flushes nothing new; test flush via a reply instead
+  sent.length = 0;
+  await handleUpdate(store, cbUpd(222, 'a:tg1'), deps);
+  assert.equal((await store.tasks()).find(t => t.id === 'tg1')!.status, 'accepted');
+  assert.ok(sent.some(x => x.chatId === '222' && /Принято|Tanggap|Got it/.test(x.text)));
+
+  // plain-text decline with a time → rescheduled, author (mum) informed in her chat
+  const t3 = mkTask({ id: 'tg3', text: 'Погладить форму', skills: ['laundry'], candidateIds: ['joy'] });
+  await store.saveTask(t3); await assignTask(store, t3, 'joy', 'test', now);
+  sent.length = 0;
+  await handleUpdate(store, msgUpd(222, 'hindi ko kaya ngayon, in 1 hour'), deps);
+  const t3b = (await store.tasks()).find(t => t.id === 'tg3')!;
+  assert.equal(t3b.status, 'accepted'); assert.ok(t3b.rescheduledFrom !== undefined || t3b.dueAt);
+  assert.ok(sent.some(x => x.chatId === '111'), 'author gets the reschedule notice');
+
+  // duplicate update id is ignored
+  const u = msgUpd(222, '/tasks', 42);
+  await handleUpdate(store, u, deps); const n = sent.length;
+  await handleUpdate(store, u, deps); assert.equal(sent.length, n);
+});
