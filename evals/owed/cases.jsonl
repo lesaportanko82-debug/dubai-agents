@@ -1,0 +1,30 @@
+{"id":"e01","text":"Смеситель MX-210, серийный 102311. Через два месяца начал течь из-под картриджа, монтаж делал сервисный мастер, давление в норме.","expect":{"class":"manufacturing","batch":"B-2026-058","status":"evidenced"}}
+{"id":"e02","text":"MX-210 s/n 100450 — chrome coating peeling off the spout after 5 weeks, cleaned only with soft cloth.","expect":{"class":"manufacturing","batch":"B-2026-031","status":"evidenced"}}
+{"id":"e03","text":"Акт СЦ №4471. KT-550 серия 500812: трещина в корпусе по литью, видна пористость металла. Эксплуатация штатная.","expect":{"class":"manufacturing","batch":"B-2026-044","status":"evidenced"}}
+{"id":"e04","text":"Пришёл KT-550, коробка порвана, на корпусе вмятина. Курьер бросил посылку. Серия 501020.","expect":{"class":"transport","batch":"B-2026-044","status":"not_recoverable"}}
+{"id":"e05","text":"Сантехник перетянул накидную гайку на кране VL-15 (серия 901233), гайка лопнула при установке.","expect":{"class":"installation","batch":"B-2026-061","status":"not_recoverable"}}
+{"id":"e06","text":"VL-15 s/n 903310 leaks at the stem from day one, installed by licensed plumber with PTFE tape, pressure 3 bar.","expect":{"class":"manufacturing","batch":"B-2026-061","status":"evidenced"}}
+{"id":"e07","text":"Смеситель MX-210 перестал нормально работать. Подробностей нет.","expect":{"class":"unknown","batch":"B-2026-058","status":"needs_review"}}
+{"id":"e08","text":"Отзыв на маркетплейсе: MX-210 капает из носика через 3 месяца, картридж менять пришлось. Серийный номер не помню.","expect":{"class":"manufacturing","batch":"B-2026-058","status":"needs_review"}}
+{"id":"e09","text":"KT-550 serial 500133: handle snapped off at the joint while opening normally, plastic insert inside looks thin.","expect":{"class":"manufacturing","batch":"B-2026-044","status":"evidenced"}}
+{"id":"e10","text":"Поставили VL-15 без фильтра на скважинную воду, через месяц клин заело из-за песка. Серия 900777.","expect":{"class":"installation","batch":"B-2026-061","status":"not_recoverable"}}
+{"id":"e11","text":"MX-210 №102999 — внутренняя резьба на подводке сорвана с завода, при первой установке не держит, видно что резьба недорезана.","expect":{"class":"manufacturing","batch":"B-2026-058","status":"evidenced"}}
+{"id":"e12","text":"Box of MX-210 delivered crushed, mixer body scratched and lever bent. Serial 101700.","expect":{"class":"transport","batch":"B-2026-031","status":"not_recoverable"}}
+{"id":"e13","text":"خلاط MX-210 الرقم التسلسلي 102450 يسرب الماء من الخرطوشة بعد شهرين من الاستخدام العادي","expect":{"class":"manufacturing","batch":"B-2026-058","status":"evidenced"}}
+{"id":"e14","text":"Kran VL-15 seri no 904100, ilk günden gövdeden su sızdırıyor, döküm hatası var gibi görünüyor.","expect":{"class":"manufacturing","batch":"B-2026-061","status":"evidenced"}}
+{"id":"e15","text":"Ребёнок ударил смеситель KT-550 игрушкой, откололась ручка. Серия 501200.","expect":{"class":"installation","batch":"B-2026-044","status":"not_recoverable"}}
+{"id":"e16","text":"Акт №4480. MX-210 серия 102010, течь по корпусу, обнаружена раковина в отливке под хромом.","expect":{"class":"manufacturing","batch":"B-2026-058","status":"evidenced"}}
+{"id":"e17","text":"Кран ZX-90 сломался.","expect":{"class":"unknown","batch":null,"status":"needs_review"}}
+{"id":"e18","text":"KT-550 — working fine but customer doesn't like the colour, wants a return.","expect":{"class":"unknown","batch":"B-2026-044","status":"needs_review"}}
+{"id":"e19","text":"VL-15 серия 902555: монтажник подключил на давление 12 атмосфер вместо допустимых 6, корпус разорвало.","expect":{"class":"installation","batch":"B-2026-061","status":"not_recoverable"}}
+{"id":"e20","text":"MX-210 serial 103500 — cartridge stiff and then leaking after 6 weeks, water is softened, installation checked by service centre.","expect":{"class":"manufacturing","batch":"B-2026-058","status":"evidenced"}}
+{"id":"e21","text":"Смеситель KT-550 серия 500999 гудит и вибрирует при открытии, сервис нашёл брак клапана-кассеты.","expect":{"class":"manufacturing","batch":"B-2026-044","status":"evidenced"}}
+{"id":"e22","text":"Посылка с VL-15 пришла мокрой, упаковка разбита, кран поцарапан. Серия 903001.","expect":{"class":"transport","batch":"B-2026-061","status":"not_recoverable"}}
+{"id":"e23","text":"MX-210 s/n 100090, leak at the base gasket after 4 months; gasket appears undersized compared to spec sheet.","expect":{"class":"manufacturing","batch":"B-2026-031","status":"evidenced"}}
+{"id":"e24","text":"Клиент сам разбирал KT-550, потерял пружину, теперь подтекает. Серия 500210.","expect":{"class":"installation","batch":"B-2026-044","status":"not_recoverable"}}
+{"id":"e25","text":"Акт №4502. MX-210 серия 102777. Отслоение хрома на рычаге через 2 месяца, химию не применяли.","expect":{"class":"manufacturing","batch":"B-2026-058","status":"evidenced"}}
+{"id":"e26","text":"VL-15 leaking, not sure why, no details from customer, serial unknown.","expect":{"class":"unknown","batch":"B-2026-061","status":"needs_review"}}
+{"id":"e27","text":"KT-550 серия 501444, картридж треснул внутри при обычной эксплуатации через 3 недели. Тел. +971 50 123 4567","expect":{"class":"manufacturing","batch":"B-2026-044","status":"evidenced"}}
+{"id":"e28","text":"MX-210 #101111 — customer installed it upside down against the instructions, hot and cold reversed, now handle cracked from forcing.","expect":{"class":"installation","batch":"B-2026-031","status":"not_recoverable"}}
+{"id":"e29","text":"Смеситель MX-210 серия 103210 капает, мастер сервиса подтвердил дефект уплотнительного кольца картриджа.","expect":{"class":"manufacturing","batch":"B-2026-058","status":"evidenced"}}
+{"id":"e30","text":"خلاط KT-550 وصل مكسوراً والكرتون ممزق، الرقم التسلسلي 500600","expect":{"class":"transport","batch":"B-2026-044","status":"not_recoverable"}}
