@@ -1,4 +1,4 @@
-import { domovoyState } from '@/lib/domovoy-server';
+import { panelContext } from '@/lib/domovoy-server';
 import { getLang } from '@/lib/lang';
 import { PageTitle, Panel, Empty } from '@/components/ui';
 import { TraceRail } from '@/components/TraceRail';
@@ -14,7 +14,7 @@ const EVENT: Record<string, { ru: string; en: string }> = {
 export default async function TracePage() {
   const lang = await getLang();
   const ru = lang === 'ru';
-  const { store, runs } = domovoyState();
+  const { store, runs } = await panelContext();
   const [members, tasks, events] = await Promise.all([store.members(), store.tasks(), store.events()]);
   const byId = new Map(members.map(m => [m.id, m]));
   const taskText = (id: string) => tasks.find(t => t.id === id)?.text ?? id;

@@ -1,4 +1,4 @@
-import { domovoyState } from '@/lib/domovoy-server';
+import { panelContext } from '@/lib/domovoy-server';
 import { getLang } from '@/lib/lang';
 import { PageTitle, Panel } from '@/components/ui';
 import { Avatar, memberColor, ROLE_LABEL } from '@/components/domovoy/Member';
@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 export default async function FairnessPage() {
   const lang = await getLang();
   const ru = lang === 'ru';
-  const { store } = domovoyState();
+  const { store } = await panelContext();
   const members = await store.members();
   const { rows, suggestion } = await weeklyReport(store, new Date().toISOString(), lang);
   const max = Math.max(...rows.map(r => r.minutes), 1);

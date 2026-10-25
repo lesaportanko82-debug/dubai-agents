@@ -8,10 +8,11 @@
 import { InMemoryDomovoyStore } from '@core/domovoy/store';
 import { DEMO_FAMILY } from '@core/domovoy/fixtures';
 import type { DomovoyStore } from '@core/domovoy/store';
-import type { Task } from '@core/domovoy/types';
+import type { Task, Household, Member } from '@core/domovoy/types';
 import type { DispatchResult } from '@core/domovoy/agent';
 import { DomovoyDb } from '@core/domovoy/supabase-store';
 import { loadRootEnv } from './env';
+import { cookies } from 'next/headers';
 
 export interface DomovoyRun { id: string; at: string; authorId: string; input: string; result: DispatchResult }
 
@@ -55,6 +56,37 @@ export function getDomovoyDb(): DomovoyDb | undefined {
 
 /** "Now" for the demo is anchored to the current week so the ledger always looks current. */
 export function demoNow(): string { return new Date().toISOString(); }
+
+export interface PanelContext {
+  store: DomovoyStore;
+  household?: Household;
+  member?: Member;
+  isDemo: boolean;
+  runs: DomovoyRun[];
+}
+
+/**
+ * Resolve the panel context: if a dm_token cookie is present and valid → Supabase store
+ * for that household; otherwise → demo in-memory store.
+ */
+export async function panelContext(): Promise<PanelContext> {
+  const db = getDomovoyDb();
+  if (db) {
+    try {
+      const jar = await cookies();
+      const token = jar.get('dm_token')?.value;
+      if (token) {
+        const session = await db.panelSession(token);
+        if (session) {
+          const store = db.store(session.household);
+          return { store, household: session.household, member: session.member, isDemo: false, runs: [] };
+        }
+      }
+    } catch { /* cookies() may throw in some contexts — fall through to demo */ }
+  }
+  const state = domovoyState();
+  return { store: state.store, isDemo: true, runs: state.runs };
+}
 
 function seed(store: InMemoryDomovoyStore) {
   const now = new Date();

@@ -1,4 +1,4 @@
-import { domovoyState } from '@/lib/domovoy-server';
+import { panelContext } from '@/lib/domovoy-server';
 import { getLang } from '@/lib/lang';
 import { PageTitle, Panel, Pill } from '@/components/ui';
 import { Avatar, LANG_LABEL, ROLE_LABEL } from '@/components/domovoy/Member';
@@ -16,7 +16,7 @@ const SKILL: Record<string, { ru: string; en: string }> = {
 export default async function FamilyPage() {
   const lang = await getLang();
   const ru = lang === 'ru';
-  const { store } = domovoyState();
+  const { store } = await panelContext();
   const members = await store.members();
   const ctx = await buildContext(store, new Date().toISOString());
   loadRootEnv();

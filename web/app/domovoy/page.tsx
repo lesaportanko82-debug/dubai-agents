@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { domovoyState } from '@/lib/domovoy-server';
+import { panelContext } from '@/lib/domovoy-server';
 import { getLang } from '@/lib/lang';
 import { PageTitle, Panel, Pill } from '@/components/ui';
 import { Avatar, memberColor } from '@/components/domovoy/Member';
@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic';
 export default async function DomovoyHome() {
   const lang = await getLang();
   const ru = lang === 'ru';
-  const { store, runs } = domovoyState();
+  const { store, runs } = await panelContext();
   const [members, tasks, events] = await Promise.all([store.members(), store.tasks(), store.events()]);
   const today = new Date().toISOString().slice(0, 10);
   const todays = tasks.filter(t => (t.dueAt ?? t.createdAt).slice(0, 10) === today).sort((a, b) => (a.dueAt ?? '').localeCompare(b.dueAt ?? ''));

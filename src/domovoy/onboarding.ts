@@ -74,6 +74,7 @@ export interface OnboardingDeps {
   send: TgSender;
   db: DomovoyDb;
   botUsername: string;
+  panelHost?: string;
 }
 
 /**
@@ -89,7 +90,7 @@ export async function handleOnboarding(upd: TgUpdate, deps: OnboardingDeps): Pro
   const text = (upd.message?.text ?? upd.message?.caption ?? '').trim();
   const cbData = upd.callback_query?.data;
 
-  // Admin commands: /add, /family — for linked members
+  // Admin commands: /add, /family, /panel — for linked members
   const linked = await db.memberByChat(chatId);
   if (linked) {
     if (/^\/add\b/.test(text) && linked.member.isAdmin) {
@@ -101,6 +102,16 @@ export async function handleOnboarding(upd: TgUpdate, deps: OnboardingDeps): Pro
       const members = await store.members();
       const lines = members.map(m => `${ROLE_EMOJI[m.role]} ${m.name} (${ROLE_LABEL[m.role][l]})${m.isAdmin ? ' 👑' : ''}${m.telegramId ? ' ✓' : ''}`);
       await send.sendMessage(chatId, TX.familyList[l](linked.household.name, lines) + '\n\n' + TX.inviteLink[l](linked.household.inviteCode, botUsername));
+      return true;
+    }
+    if (/^\/panel\b/.test(text)) {
+      const token = await db.createPanelSession(linked.household.id, linked.member.id);
+      const host = deps.panelHost ?? 'dubai-agents.vercel.app';
+      await send.sendMessage(chatId,
+        l === 'ru'
+          ? `📊 Веб-панель вашей семьи:\nhttps://${host}/api/domovoy/auth?token=${token}\n\nСсылка действует 30 дней.`
+          : `📊 Your family dashboard:\nhttps://${host}/api/domovoy/auth?token=${token}\n\nLink valid for 30 days.`,
+      );
       return true;
     }
     return false; // let the normal handler deal with it

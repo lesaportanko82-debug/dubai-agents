@@ -1,4 +1,4 @@
-import { domovoyState } from '@/lib/domovoy-server';
+import { panelContext } from '@/lib/domovoy-server';
 import { getLang } from '@/lib/lang';
 import { PageTitle, Panel, Pill } from '@/components/ui';
 import { Avatar } from '@/components/domovoy/Member';
@@ -19,7 +19,7 @@ const COLS: { key: string; statuses: Task['status'][]; ru: string; en: string }[
 export default async function TasksPage() {
   const lang = await getLang();
   const ru = lang === 'ru';
-  const { store } = domovoyState();
+  const { store } = await panelContext();
   const [members, tasks] = await Promise.all([store.members(), store.tasks()]);
   const byId = new Map(members.map(m => [m.id, m]));
   const btn = 'rounded-md px-2 py-1 text-[12px] font-medium border';
