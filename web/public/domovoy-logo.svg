@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 280" width="800" height="280">
+  <defs>
+    <linearGradient id="lbg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#D97706"/>
+    </linearGradient>
+    <linearGradient id="lroof" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#92400E"/>
+      <stop offset="100%" stop-color="#78350F"/>
+    </linearGradient>
+    <linearGradient id="lwall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FEF3C7"/>
+      <stop offset="100%" stop-color="#FDE68A"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Icon (scaled down, centered at x=120, y=140) -->
+  <g transform="translate(120 140) scale(0.42)">
+    <!-- Background circle -->
+    <circle cx="0" cy="0" r="240" fill="url(#lbg)"/>
+
+    <!-- House body -->
+    <rect x="-90" y="-16" width="180" height="140" rx="8" fill="url(#lwall)"/>
+
+    <!-- Roof -->
+    <path d="M-116 -8 L0 -108 L116 -8 Z" fill="url(#lroof)"/>
+    <path d="M-106 -8 L0 -101 L106 -8 Z" fill="none" stroke="#78350F" stroke-width="3"/>
+
+    <!-- Chimney -->
+    <rect x="54" y="-91" width="28" height="60" rx="4" fill="#92400E"/>
+    <!-- AI smoke signals -->
+    <path d="M68 -101 Q74 -116 68 -131" fill="none" stroke="#FEF3C7" stroke-width="3" stroke-linecap="round" opacity="0.7"/>
+    <path d="M68 -131 Q62 -146 68 -161" fill="none" stroke="#FEF3C7" stroke-width="2.5" stroke-linecap="round" opacity="0.5"/>
+    <path d="M68 -161 Q74 -176 68 -188" fill="none" stroke="#FEF3C7" stroke-width="2" stroke-linecap="round" opacity="0.3"/>
+
+    <!-- Door -->
+    <rect x="-24" y="39" width="48" height="85" rx="24 24 0 0" fill="#92400E"/>
+    <circle cx="14" cy="84" r="5" fill="#FBBF24"/>
+
+    <!-- Left window -->
+    <rect x="-74" y="9" width="36" height="36" rx="4" fill="#FEF3C7" stroke="#92400E" stroke-width="3"/>
+    <line x1="-56" y1="9" x2="-56" y2="45" stroke="#92400E" stroke-width="2"/>
+    <line x1="-74" y1="27" x2="-38" y2="27" stroke="#92400E" stroke-width="2"/>
+    <rect x="-72" y="11" width="14" height="14" rx="2" fill="#FBBF24" opacity="0.4"/>
+    <rect x="-54" y="11" width="14" height="14" rx="2" fill="#FBBF24" opacity="0.3"/>
+    <rect x="-72" y="29" width="14" height="14" rx="2" fill="#FBBF24" opacity="0.3"/>
+    <rect x="-54" y="29" width="14" height="14" rx="2" fill="#FBBF24" opacity="0.5"/>
+
+    <!-- Right window -->
+    <rect x="38" y="9" width="36" height="36" rx="4" fill="#FEF3C7" stroke="#92400E" stroke-width="3"/>
+    <line x1="56" y1="9" x2="56" y2="45" stroke="#92400E" stroke-width="2"/>
+    <line x1="38" y1="27" x2="74" y2="27" stroke="#92400E" stroke-width="2"/>
+    <rect x="40" y="11" width="14" height="14" rx="2" fill="#FBBF24" opacity="0.5"/>
+    <rect x="58" y="11" width="14" height="14" rx="2" fill="#FBBF24" opacity="0.3"/>
+    <rect x="40" y="29" width="14" height="14" rx="2" fill="#FBBF24" opacity="0.3"/>
+    <rect x="58" y="29" width="14" height="14" rx="2" fill="#FBBF24" opacity="0.4"/>
+
+    <!-- Eyes -->
+    <circle cx="-20" cy="-41" r="10" fill="#FEF3C7"/>
+    <circle cx="20" cy="-41" r="10" fill="#FEF3C7"/>
+    <circle cx="-18" cy="-42" r="5" fill="#78350F"/>
+    <circle cx="22" cy="-42" r="5" fill="#78350F"/>
+    <!-- Smile -->
+    <path d="M-14 -28 Q0 -18 14 -28" fill="none" stroke="#78350F" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+  <!-- Text: Домовёнок -->
+  <text x="280" y="118" font-family="'Segoe UI', 'SF Pro Display', -apple-system, Arial, sans-serif" font-size="62" font-weight="700" fill="#78350F" letter-spacing="-1">Домовёнок</text>
+
+  <!-- Subtitle: Domovoy — AI Family Dispatcher -->
+  <text x="282" y="158" font-family="'Segoe UI', 'SF Pro Display', -apple-system, Arial, sans-serif" font-size="22" font-weight="400" fill="#92400E" letter-spacing="3">DOMOVOY</text>
+  <text x="420" y="158" font-family="'Segoe UI', 'SF Pro Display', -apple-system, Arial, sans-serif" font-size="22" font-weight="300" fill="#B45309" letter-spacing="1">· AI Family Dispatcher</text>
+
+  <!-- Thin accent line -->
+  <line x1="280" y1="175" x2="740" y2="175" stroke="#D97706" stroke-width="1.5" opacity="0.4"/>
+
+  <!-- Tagline -->
+  <text x="282" y="200" font-family="'Segoe UI', 'SF Pro Display', -apple-system, Arial, sans-serif" font-size="16" font-weight="400" fill="#92400E" opacity="0.7">Distributes chores. Reminds gently. Keeps the peace.</text>
+</svg>
