@@ -9,6 +9,8 @@ export const dynamic = 'force-dynamic';
 const EVENT: Record<string, { ru: string; en: string }> = {
   created: { ru: 'создано', en: 'created' }, assigned: { ru: 'назначено', en: 'assigned' }, accepted: { ru: 'принято', en: 'accepted' }, declined: { ru: 'отказ', en: 'declined' },
   swapped: { ru: 'передано другому', en: 'swapped' }, rescheduled: { ru: 'перенесено', en: 'rescheduled' }, timeout: { ru: 'нет ответа → отказ', en: 'no reply → decline' }, proof_requested: { ru: 'запрошено фото', en: 'photo requested' }, auto_replaced: { ru: 'срочное, заменён', en: 'urgent, replaced' }, reminded: { ru: 'напоминание', en: 'reminded' }, done: { ru: 'сделано', en: 'done' }, blocked: { ru: 'исключён', en: 'ruled out' }, message: { ru: 'сообщение', en: 'message' },
+  approval_requested: { ru: 'запрос решения', en: 'approval requested' }, approval_decided: { ru: 'решение принято', en: 'approval decided' }, autonomous_action: { ru: 'агент сделал сам', en: 'autonomous action' },
+  verification_asked: { ru: 'проверка: сделано?', en: 'verification asked' }, verified: { ru: 'подтверждено', en: 'verified' }, loop_closed: { ru: 'цикл закрыт', en: 'loop closed' }, info: { ru: 'служебное', en: 'info' },
 };
 
 export default async function TracePage() {

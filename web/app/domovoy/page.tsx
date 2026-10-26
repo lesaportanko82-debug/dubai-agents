@@ -6,16 +6,14 @@ import { PageTitle, Panel, Pill } from '@/components/ui';
 import { Avatar, memberColor } from '@/components/domovoy/Member';
 import { hhmm } from '@core/domovoy/household';
 import { reasonText } from '@/lib/reasons';
+import { demoAction } from './loop-actions';
 
 export const dynamic = 'force-dynamic';
 
 export default async function DomovoyHome() {
   const ctx = await panelContext();
 
-  // If using Supabase but no valid session → redirect to login
-  if (ctx.isDemo === false && !ctx.member) {
-    redirect('/login/domovoy');
-  }
+  if (!ctx.authenticated) redirect('/login/domovoy');
 
   const lang = await getLang();
   const ru = lang === 'ru';
@@ -54,6 +52,18 @@ export default async function DomovoyHome() {
               {ru ? `${members.length} человек в семье` : `${members.length} family members`}
             </span>
           </div>
+        </div>
+      )}
+
+      {(member?.isAdmin ?? true) && (
+        <div className="mb-5 rounded-lg border border-dashed border-stone-300 px-5 py-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px]">
+          <span className="text-mute">{ru ? 'Показать, как агент действует сам:' : 'Show the agent acting on its own:'}</span>
+          <form action={demoAction} className="flex flex-wrap gap-2">
+            <button name="kind" value="rain" className="rounded-md border border-stone-300 bg-paper px-3 py-1 hover:border-stone-400">🌧️ {ru ? 'дождь → перенос через родителей' : 'rain → reschedule via parents'}</button>
+            <button name="kind" value="pay" className="rounded-md border border-stone-300 bg-paper px-3 py-1 hover:border-stone-400">💳 {ru ? 'оплата по правилам' : 'payment within rules'}</button>
+            <button name="kind" value="cart" className="rounded-md border border-stone-300 bg-paper px-3 py-1 hover:border-stone-400">🛒 {ru ? 'корзина в магазине' : 'shop cart'}</button>
+          </form>
+          <span className="text-mute">{ru ? 'Результат — в «Решениях», «Кошельке» и «Как решал агент».' : 'See the result in Decisions, Wallet and Agent decisions.'}</span>
         </div>
       )}
 

@@ -15,15 +15,15 @@ import { markDone, respond, tick, weeklyReport } from './household';
 import type { DomovoyStore } from './store';
 import type { Lang, Member, OutgoingMessage, Task } from './types';
 import { transcribeVoice } from './integrations';
-import { analyzePhoto, demoWeather, type DemoWeatherKind } from './integrations';
+import { analyzePhoto } from './integrations';
+import { runDemo, type DemoKind } from './demo';
 import { decideApproval } from './approvals';
-import { runAutonomy } from './autonomy';
 import { impactMetrics, formatImpact } from './metrics';
 import { learningReport, formatLearning } from './learning';
 import { CURRENCIES, DEFAULT_THRESHOLD, formatMoney, parseCurrency } from './policy';
-import { editWallet, formatWallet, placeOrder, refundPayment } from './payments';
+import { editWallet, formatWallet, refundPayment } from './payments';
 import { formatProfile, rememberFact, visibleFacts } from './profile';
-import { cartCancel, cartPaid, cartPayFromWallet, prepareCart } from './shopping';
+import { cartCancel, cartPaid, cartPayFromWallet } from './shopping';
 
 // ---------- Telegram shapes (only what we use) ----------
 export interface TgUser { id: number; first_name?: string; language_code?: string }
@@ -431,39 +431,10 @@ export async function handleUpdate(store: DomovoyStore, upd: TgUpdate, deps: Tel
   const demoMatch = text.match(/^\/demo(?:\s+(rain|heat|storm|dry|pay|cart))?/i);
   if (demoMatch) {
     if (!me.isAdmin) { await send.sendMessage(chatId, me.lang === 'ru' ? 'Только для администраторов.' : 'Admins only.'); return; }
-    if (demoMatch[1]?.toLowerCase() === 'cart') {
-      // showcase: the agent builds a Carrefour cart with links; the person pays in the app, then the agent follows the delivery
-      const w = await store.wallet();
-      if (!w.deliveryAddress) { await editWallet(store, 'address', 'Dubai Marina, Marina Gate 1, apt 1204', me.lang); await rememberFact(store, me, { key: 'home', value: 'Dubai Marina, Marina Gate 1, apt 1204', kind: 'place', access: 'family' }, now); }
-      const r = await prepareCart(store, { requestedBy: me.id, merchant: 'Carrefour', category: 'grocery', items: me.lang === 'ru'
-        ? [{ text: 'Молоко 2 л', est_price: 12 }, { text: 'Хлеб', est_price: 6 }, { text: 'Яйца 12 шт', qty: 1, est_price: 18 }, { text: 'Бананы 1 кг', est_price: 8 }]
-        : [{ text: 'Milk 2 l', est_price: 12 }, { text: 'Bread', est_price: 6 }, { text: 'Eggs 12', est_price: 18 }, { text: 'Bananas 1 kg', est_price: 8 }] }, now);
-      await flush();
-      await send.sendMessage(chatId, me.lang === 'ru' ? `🎬 Демо корзины: ${r.cart.lines.length} позиции ≈ ${r.cart.estimatedTotal} ${r.cart.currency}. Нажмите «оплатил(а)» — увидите, как агент ведёт доставку до конца.` : `🎬 Cart demo: ${r.cart.lines.length} items ≈ ${r.cart.estimatedTotal} ${r.cart.currency}. Press "paid" to watch the agent follow the delivery to the end.`);
-      return;
-    }
-    if (demoMatch[1]?.toLowerCase() === 'pay') {
-      // showcase: an order inside the rules is paid with a receipt + refund; a big one is declined by the card and goes to the parents
-      const w = await store.wallet();
-      if (!w.deliveryAddress) { await editWallet(store, 'address', 'Dubai Marina, Marina Gate 1, apt 1204', me.lang); await rememberFact(store, me, { key: 'home', value: 'Dubai Marina, Marina Gate 1, apt 1204', kind: 'place', access: 'family' }, now); }
-      const w2 = await store.wallet();
-      if (!w2.knownMerchants.some(m => m.name === 'Carrefour')) { w2.knownMerchants.push({ name: 'Carrefour', category: 'grocery', agentCheckout: true }); await store.saveWallet(w2); }
-      const small = Math.max(1, Math.round(w2.perTxLimit / 6));
-      const big = Math.round(w2.perTxLimit * 3.3);
-      const r1 = await placeOrder(store, { requestedBy: me.id, merchant: 'Carrefour', category: 'grocery', amount: small, items: me.lang === 'ru' ? 'Молоко 2 л, хлеб' : 'Milk 2 l, bread' }, now);
-      const r2 = await placeOrder(store, { requestedBy: me.id, merchant: 'Carrefour', category: 'kids', amount: big, items: me.lang === 'ru' ? 'Детский велосипед' : 'Kids bike' }, now);
-      await flush();
-      await send.sendMessage(chatId, me.lang === 'ru'
-        ? `🎬 Демо оплаты: «${r1.payment.items}» → ${r1.outcome} (${r1.payment.reason.ru}); «${r2.payment.items}» → ${r2.outcome} (${r2.payment.reason.ru}). Кнопка возврата под чеком, одобрение — у родителей.`
-        : `🎬 Payment demo: "${r1.payment.items}" → ${r1.outcome} (${r1.payment.reason.en}); "${r2.payment.items}" → ${r2.outcome} (${r2.payment.reason.en}). Refund button under the receipt, approval with the parents.`);
-      return;
-    }
-    const kind = (demoMatch[1]?.toLowerCase() ?? 'rain') as DemoWeatherKind;
-    const sentNow = await runAutonomy(store, now, { weather: demoWeather(kind, now), force: true });
+    const kind = (demoMatch[1]?.toLowerCase() ?? 'rain') as DemoKind;
+    const note = await runDemo(store, me, kind, now);
     await flush();
-    await send.sendMessage(chatId, me.lang === 'ru'
-      ? `🎬 Демо «${kind}»: агент выполнил ${sentNow.length} действ${sentNow.length === 1 ? 'ие' : sentNow.length < 5 ? 'ия' : 'ий'}: ${Array.from(new Set(sentNow.map(x => x.kind))).join(', ') || '—'}`
-      : `🎬 Demo "${kind}": the agent took ${sentNow.length} action${sentNow.length === 1 ? '' : 's'}: ${Array.from(new Set(sentNow.map(x => x.kind))).join(', ') || '—'}`);
+    await send.sendMessage(chatId, me.lang === 'ru' ? note.ru : note.en);
     return;
   }
   if (/^\/report/.test(text)) {

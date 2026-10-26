@@ -13,6 +13,9 @@ const NAV: Record<Product, { href: string; key: Key }[]> = {
     { href: '/domovoy/trace', key: 'd_trace' },
     { href: '/domovoy/fairness', key: 'd_fairness' },
     { href: '/domovoy/impact', key: 'd_impact' },
+    { href: '/domovoy/approvals', key: 'd_approvals' },
+    { href: '/domovoy/wallet', key: 'd_wallet' },
+    { href: '/domovoy/profile', key: 'd_profile' },
     { href: '/domovoy/try', key: 'd_sim' },
   ],
   owed: [

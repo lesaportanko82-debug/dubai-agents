@@ -39,6 +39,15 @@ export default function DomovoyLoginPage() {
     setLoading(false);
   };
 
+  const enterDemo = async () => {
+    setLoading(true); setError('');
+    try {
+      const res = await fetch('/api/domovoy/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ demo: true }) });
+      if (!res.ok) { setError('Демо недоступно'); setLoading(false); return; }
+      window.location.href = '/domovoy';
+    } catch { setError('Нет связи с сервером'); setLoading(false); }
+  };
+
   const pickMember = async (memberId: string) => {
     setLoading(true);
     setError('');
@@ -92,6 +101,12 @@ export default function DomovoyLoginPage() {
             <p className="text-[12px] text-stone-400 mt-4 text-center">
               Код можно узнать у администратора семьи или по команде /panel в Telegram-боте.
             </p>
+            <div className="mt-5 pt-4 border-t border-stone-100 text-center">
+              <button onClick={enterDemo} disabled={loading} className="text-[14px] font-medium text-amber-700 hover:text-amber-800 disabled:opacity-40">
+                Посмотреть демо-семью →
+              </button>
+              <p className="text-[12px] text-stone-400 mt-1">Синтетические данные: семья из 6 человек в Дубае. Можно всё трогать.</p>
+            </div>
           </div>
         ) : (
           /* Step 2: Member picker */

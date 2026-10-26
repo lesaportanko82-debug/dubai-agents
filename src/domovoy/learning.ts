@@ -108,6 +108,14 @@ export function nextLevelHint(decision: AutonomyDecision, doneByCand: number, la
     : `${n} more completion${n === 1 ? '' : 's'} and I will ${decision.level === 'ask' ? 'assign it myself' : 'start proposing an executor'}`;
 }
 
+/** Russian plural: 1 дело, 2 дела, 5 дел. */
+export function plural(n: number, one: string, few: string, many: string): string {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+  return many;
+}
+
 export interface LearningRow { text: string; executorId?: string; executorName?: string; level: AutonomyLevel; confidence: number; count: number; hint: string; why: string }
 
 /** What the agent has learned about this household, chore by chore (for /learned and the panel). */
@@ -131,7 +139,7 @@ export async function learningReport(store: DomovoyStore, lang: Lang): Promise<{
   const act = rows.filter(r => r.level === 'act').length, ask = rows.filter(r => r.level === 'ask').length;
   const active = patterns.filter(p => p.active && p.confidence >= 0.3).length;
   const summary = lang === 'ru'
-    ? `🧠 Я выучил ${active} закономерност${active === 1 ? 'ь' : active < 5 ? 'и' : 'ей'} и ${rows.length} повторяющихся дел: ${act} делаю сам, ${ask} предлагаю, ${rows.length - act - ask} пока напоминаю.`
+    ? `🧠 Я выучил ${active} ${plural(active, 'закономерность', 'закономерности', 'закономерностей')} и ${rows.length} ${plural(rows.length, 'повторяющееся дело', 'повторяющихся дела', 'повторяющихся дел')}: ${act} делаю сам, ${ask} предлагаю, ${rows.length - act - ask} пока напоминаю.`
     : `🧠 I have learned ${active} pattern${active === 1 ? '' : 's'} and ${rows.length} recurring chores: ${act} I handle myself, ${ask} I propose, ${rows.length - act - ask} I still only remind about.`;
   return { rows, patterns: active, summary };
 }

@@ -1,10 +1,10 @@
 'use server';
 import { revalidatePath } from 'next/cache';
-import { domovoyState, demoNow } from '@/lib/domovoy-server';
+import { panelContext, demoNow } from '@/lib/domovoy-server';
 import { markDone, respond, tick } from '@core/domovoy/household';
 
 export async function respondAction(formData: FormData) {
-  const { store } = domovoyState();
+  const { store } = await panelContext();
   const taskId = String(formData.get('taskId'));
   const memberId = String(formData.get('memberId'));
   const answer = String(formData.get('answer')) as 'accept' | 'decline';
@@ -15,14 +15,14 @@ export async function respondAction(formData: FormData) {
 }
 
 export async function doneAction(formData: FormData) {
-  const { store } = domovoyState();
+  const { store } = await panelContext();
   const withPhoto = formData.get('photo') === '1';
   try { await markDone(store, String(formData.get('taskId')), String(formData.get('memberId')), demoNow(), withPhoto ? { proofUrl: `photos/${formData.get('taskId')}.jpg` } : {}); } catch { /* ignore */ }
   revalidatePath('/domovoy', 'layout');
 }
 
 export async function rescheduleAction(formData: FormData) {
-  const { store } = domovoyState();
+  const { store } = await panelContext();
   const taskId = String(formData.get('taskId'));
   const tasks = await store.tasks();
   const task = tasks.find(t => t.id === taskId);
@@ -38,7 +38,7 @@ export async function rescheduleAction(formData: FormData) {
 }
 
 export async function cancelAction(formData: FormData) {
-  const { store } = domovoyState();
+  const { store } = await panelContext();
   const taskId = String(formData.get('taskId'));
   const tasks = await store.tasks();
   const task = tasks.find(t => t.id === taskId);
@@ -52,7 +52,7 @@ export async function cancelAction(formData: FormData) {
 
 /** Simulate the scheduler: advance the clock by N minutes past the next due time and send reminders. */
 export async function tickAction(formData: FormData) {
-  const { store } = domovoyState();
+  const { store } = await panelContext();
   const plusMin = Number(formData.get('plusMin') ?? 0);
   const at = new Date(Date.now() + plusMin * 60_000).toISOString();
   await tick(store, at);

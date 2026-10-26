@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { getDomovoyDb } from '@/lib/domovoy-server';
+import { getDomovoyDb, ensureDemoHousehold } from '@/lib/domovoy-server';
 import { loadRootEnv } from '@/lib/env';
 
 export const dynamic = 'force-dynamic';
@@ -24,7 +24,7 @@ export async function GET(req: Request) {
   const jar = await cookies();
   jar.set(COOKIE, token, {
     httpOnly: true,
-    secure: true,
+    secure: new URL(req.url).protocol === 'https:',
     sameSite: 'lax',
     path: '/domovoy',
     maxAge: 30 * 24 * 3600, // 30 days
@@ -44,6 +44,18 @@ export async function POST(req: Request) {
   if (!db) return NextResponse.json({ error: 'Supabase not configured' }, { status: 500 });
 
   const body = await req.json().catch(() => null);
+
+  // Demo entrance: a session on the shared demo family as its admin (no PIN)
+  if (body?.demo) {
+    const demo = await ensureDemoHousehold(db);
+    const members = await db.store(demo).members();
+    const admin = members.find(m => m.isAdmin) ?? members[0];
+    const token = await db.createPanelSession(demo.id, admin.id, 24);
+    const jar = await cookies();
+    jar.set(COOKIE, token, { httpOnly: true, secure: new URL(req.url).protocol === 'https:', sameSite: 'lax', path: '/domovoy', maxAge: 24 * 3600 });
+    return NextResponse.json({ ok: true, demo: true });
+  }
+
   if (!body?.pin || typeof body.pin !== 'string') {
     return NextResponse.json({ error: 'missing pin' }, { status: 400 });
   }
@@ -77,7 +89,7 @@ export async function POST(req: Request) {
   const jar = await cookies();
   jar.set(COOKIE, token, {
     httpOnly: true,
-    secure: true,
+    secure: new URL(req.url).protocol === 'https:',
     sameSite: 'lax',
     path: '/domovoy',
     maxAge: 30 * 24 * 3600,
