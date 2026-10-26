@@ -13,6 +13,7 @@ import type { DispatchResult } from '@core/domovoy/agent';
 import { DomovoyDb } from '@core/domovoy/supabase-store';
 import { loadRootEnv } from './env';
 import { cookies } from 'next/headers';
+import { cache } from 'react';
 
 export interface DomovoyRun { id: string; at: string; authorId: string; input: string; result: DispatchResult }
 
@@ -65,7 +66,6 @@ export interface PanelContext {
   isDemo: boolean;
   /** false when Supabase is configured and there is no valid session → the layout redirects to login */
   authenticated: boolean;
-  runs: DomovoyRun[];
 }
 
 export const DEMO_HOUSEHOLD_NAME = 'Demo · Домовёнок';
@@ -113,7 +113,16 @@ export async function resetDemoHousehold(db: DomovoyDb): Promise<void> {
  * Supabase without a session → demo household read-only context, not authenticated (layout redirects);
  * no Supabase → in-memory demo.
  */
-export async function panelContext(): Promise<PanelContext> {
+/** One lookup per request: the layout and the page share it (React cache is request-scoped). */
+export const panelContext = cache(panelContextUncached);
+
+/** Recent agent runs — only the pages that show them pay for the query. */
+export async function panelRuns(ctx: PanelContext, limit = 20): Promise<DomovoyRun[]> {
+  if (getDomovoyDb()) return ctx.authenticated && ctx.household ? ((await ctx.store.runs(limit)) as DomovoyRun[]) : [];
+  return domovoyState().runs;
+}
+
+async function panelContextUncached(): Promise<PanelContext> {
   const db = getDomovoyDb();
   if (db) {
     try {
@@ -123,17 +132,16 @@ export async function panelContext(): Promise<PanelContext> {
         const session = await db.panelSession(token);
         if (session) {
           const store = db.store(session.household);
-          const runs = (await store.runs(20)) as DomovoyRun[];
-          return { store, household: session.household, member: session.member, isDemo: session.household.name === DEMO_HOUSEHOLD_NAME, authenticated: true, runs };
+          return { store, household: session.household, member: session.member, isDemo: session.household.name === DEMO_HOUSEHOLD_NAME, authenticated: true };
         }
       }
     } catch { /* cookies() may throw in some contexts */ }
     const demo = await ensureDemoHousehold(db);
     const store = db.store(demo);
-    return { store, household: demo, isDemo: true, authenticated: false, runs: [] };
+    return { store, household: demo, isDemo: true, authenticated: false };
   }
   const state = domovoyState();
-  return { store: state.store, isDemo: true, authenticated: true, runs: state.runs };
+  return { store: state.store, isDemo: true, authenticated: true };
 }
 
 async function seed(store: DomovoyStore, prefix = '') {

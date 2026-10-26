@@ -1,4 +1,4 @@
-import { panelContext } from '@/lib/domovoy-server';
+import { panelContext, panelRuns } from '@/lib/domovoy-server';
 import { getLang } from '@/lib/lang';
 import { PageTitle } from '@/components/ui';
 import { TryClient } from './TryClient';
@@ -8,7 +8,9 @@ export const dynamic = 'force-dynamic';
 export default async function TryPage() {
   const lang = await getLang();
   const ru = lang === 'ru';
-  const { store, runs } = await panelContext();
+  const ctx = await panelContext();
+  const { store } = ctx;
+  const runs = await panelRuns(ctx);
   const members = (await store.members()).map(m => ({ id: m.id, name: m.name, role: m.role, lang: m.lang }));
   return (
     <>
