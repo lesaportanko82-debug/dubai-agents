@@ -31,7 +31,7 @@ async function ensureOutdoorPlan(store: DomovoyStore, me: Member, nowIso: string
   const child = members.find(m => m.role === 'child');
   const driver = members.find(m => m.isAdmin && m.id !== me.id && m.skills.includes('drive')) ?? members.find(m => m.skills.includes('drive')) ?? me;
   const dueAt = new Date(new Date(nowIso).getTime() + 4 * 3_600_000).toISOString();
-  const text = me.lang === 'ru' ? `Отвезти ${child?.name ?? 'ребёнка'} на футбол` : `Take ${child?.name ?? 'the kid'} to football`;
+  const text = me.lang === 'ru' ? `Футбол: отвезти ${child?.name ?? 'ребёнка'} на тренировку` : `Football: take ${child?.name ?? 'the kid'} to practice`;
   await store.saveTask({
     id: 't-' + randomUUID().slice(0, 8), authorId: me.id, text, dueAt, minutes: 50, skills: ['drive'], kidSafe: false,
     candidateIds: [driver.id], declinedBy: [], status: 'accepted', assigneeId: driver.id, assignedAt: nowIso, reminderLevel: 0, createdAt: nowIso,

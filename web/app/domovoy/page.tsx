@@ -110,7 +110,7 @@ export default async function DomovoyHome() {
                 <Avatar m={m} size={28} />
                 <span className="text-[13px] font-medium truncate">{m.name.replace('Бабушка ', '')}</span>
               </div>
-              <div className="relative flex-1 h-9 rounded bg-stone-50 border border-stone-200">
+              <div className="relative flex-1 min-w-0 h-9 rounded bg-stone-50 border border-stone-200 overflow-hidden">
                 {items.map(t => t.dueAt && (
                   <div
                     key={t.id}

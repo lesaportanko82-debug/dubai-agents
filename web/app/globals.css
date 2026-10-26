@@ -58,7 +58,7 @@ h1, h2, h3 { letter-spacing: -0.01em; }
 .num { font-variant-numeric: tabular-nums; }
 
 /* a quiet surface: no drop shadow unless it floats */
-.panel {
+.panel { min-width: 0; overflow-wrap: anywhere;
   background: var(--color-paper);
   border: 1px solid var(--color-stone-200);
   border-radius: var(--radius-card);
