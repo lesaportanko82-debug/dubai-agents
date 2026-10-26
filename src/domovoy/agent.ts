@@ -306,7 +306,8 @@ export async function runDispatch(client: ModelClient, store: DomovoyStore, auth
   const created: Task[] = [];
 
   // Build pattern + profile context for the system prompt (profile: only what this author may see, no medical)
-  const patternCtx = (await patternContext(store)) + (await profileContext(store, author));
+  // and the family snapshot itself, so a simple request needs no get_family round trip (each model step costs ~10 s)
+  const patternCtx = (await patternContext(store)) + (await profileContext(store, author)) + '\n\n## Family now (= get_family; call the tool only if you need it refreshed)\n' + JSON.stringify(await familySnapshot());
 
   const messages: any[] = [{ role: 'user', content: `From: ${author.name} (role: ${author.role}, id: ${author.id}${author.age ? ', age: ' + author.age : ''}${author.isAdmin ? ', admin' : ''})\nNow: ${now} (${tz})\n\nMessage:\n${text}` }];
   for (let step = 0; step < (opts.maxSteps ?? 10); step++) {
@@ -328,18 +329,20 @@ export async function runDispatch(client: ModelClient, store: DomovoyStore, auth
   }
   return { summary: 'Stopped: step limit reached.', tasks: created, trace, redactions: removed };
 
+  async function familySnapshot() {
+    const ctx = await buildContext(store, now, tz);
+    const open = (await store.tasks()).filter(t => ['new', 'assigned', 'accepted', 'unassigned'].includes(t.status)).slice(-30);
+    return {
+      timezone: tz,
+      open_tasks: open.map(t => ({ id: t.id, text: t.text, due_at: t.dueAt, assignee_id: t.assigneeId, about_member_id: t.aboutMemberId, status: t.status })),
+      members: members.map(m => ({ id: m.id, name: m.name, role: m.role, age: m.age, lang: m.lang, skills: m.skills, message_style: m.messageStyle, work_hours: m.workHours, day_off: m.dayOff, week_minutes: ctx.weekMinutes[m.id], open_today: ctx.openToday[m.id], busy: m.busy.map(b => `${b.from}–${b.to} ${b.what ?? ''}`.trim()) })),
+      skills: Object.keys(KID_SKILLS),
+    };
+  }
+
   async function exec(name: string, rawInput: unknown): Promise<unknown> {
     const input = stripNulls(rawInput);
-    if (name === 'get_family') {
-      const ctx = await buildContext(store, now, tz);
-      const open = (await store.tasks()).filter(t => ['new', 'assigned', 'accepted', 'unassigned'].includes(t.status)).slice(-30);
-      return {
-        timezone: tz,
-        open_tasks: open.map(t => ({ id: t.id, text: t.text, due_at: t.dueAt, assignee_id: t.assigneeId, about_member_id: t.aboutMemberId, status: t.status })),
-        members: members.map(m => ({ id: m.id, name: m.name, role: m.role, age: m.age, lang: m.lang, skills: m.skills, message_style: m.messageStyle, work_hours: m.workHours, day_off: m.dayOff, week_minutes: ctx.weekMinutes[m.id], open_today: ctx.openToday[m.id], busy: m.busy.map(b => `${b.from}–${b.to} ${b.what ?? ''}`.trim()) })),
-        skills: Object.keys(KID_SKILLS),
-      };
-    }
+    if (name === 'get_family') return familySnapshot();
     if (name === 'check_patterns') {
       const { member_id } = CheckPatternsIn.parse(input);
       const patterns = await store.patterns(member_id);
