@@ -16,6 +16,7 @@ import { executeAction, requestApproval, touchesChild } from './approvals';
 import { CURRENCIES, formatMoney, needsMoneyApproval, parseCurrency } from './policy';
 import { PAYMENT_CATEGORIES, placeOrder, type PaymentCategory } from './payments';
 import { profileContext, rememberFact, visibleFacts, type FactAccess, type FactKind } from './profile';
+import { MERCHANTS, prepareCart } from './shopping';
 import { decideAutonomy } from './learning';
 
 function hourIn(iso: string, tz: string): number {
@@ -82,6 +83,12 @@ const PlaceOrderIn = z.object({
   amount: z.number().positive(),
   currency: z.string().optional(),
   items: z.string().min(2).max(200),
+  task_id: z.string().optional(),
+});
+const PrepareCartIn = z.object({
+  merchant: z.string().min(2).max(60),
+  category: z.enum(PAYMENT_CATEGORIES as [PaymentCategory, ...PaymentCategory[]]).optional(),
+  items: z.array(z.object({ text: z.string().min(1).max(80), qty: z.number().int().positive().optional(), est_price: z.number().nonnegative().optional() })).min(1).max(20),
   task_id: z.string().optional(),
 });
 const GetProfileIn = z.object({ kind: z.enum(['place', 'person', 'rule', 'recurring', 'other']).optional(), about_member_id: z.string().optional() });
@@ -211,6 +218,19 @@ export const DISPATCH_TOOLS: ToolDef[] = [
         items: { type: 'string', description: 'What exactly' }, task_id: { type: 'string' },
       },
       required: ['merchant', 'category', 'amount', 'items'],
+    },
+  },
+  {
+    name: 'prepare_cart',
+    description: `Shopping, the default for "закажи / купи / order / buy": the agent builds the cart (items, quantities, estimated prices if known, delivery address from the profile, search deep links into the merchant) and sends it to the person who can pay — the requester if an adult, otherwise a parent. They pay with one tap in the merchant app and press "paid"; the agent then creates "receive the delivery", verifies it arrived and reports. If the merchant accepts agent checkout the card also offers "pay from the family wallet" (rules in place_order apply). Known UAE merchants: ${MERCHANTS.map(m => m.name).join(', ')}; any other name works with a generic link. Use place_order directly ONLY when the author explicitly asks to pay from the family wallet.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        merchant: { type: 'string' }, category: { type: 'string', enum: PAYMENT_CATEGORIES },
+        items: { type: 'array', items: { type: 'object', properties: { text: { type: 'string' }, qty: { type: 'integer' }, est_price: { type: 'number', description: 'Estimated unit price in the family currency, only if the author said it or it is obvious' } }, required: ['text'] } },
+        task_id: { type: 'string' },
+      },
+      required: ['merchant', 'items'],
     },
   },
   {
@@ -484,6 +504,13 @@ export async function runDispatch(client: ModelClient, store: DomovoyStore, auth
           : r.outcome === 'pending_approval' ? 'Card declined by the family rules; parents got an approval. Tell the author it awaits the parents.'
           : r.outcome === 'need_address' ? 'Ask the author for the delivery address (one line), then remember_fact(key="home") and call place_order again.'
           : r.outcome === 'card_declined' ? 'The bank declined. Nothing charged. Tell the author.' : 'Refused by a hard rule. Tell the author why.' };
+    }
+    if (name === 'prepare_cart') {
+      const c = PrepareCartIn.parse(input);
+      const r = await prepareCart(store, { requestedBy: authorId, merchant: c.merchant, category: c.category, items: c.items, taskId: c.task_id }, now);
+      const payer = members.find(m => m.id === r.cart.payerId);
+      return { cart_id: r.cart.id, merchant: r.cart.merchant, lines: r.cart.lines.length, estimated_total: r.cart.estimatedTotal ? formatMoney(r.cart.estimatedTotal, r.cart.currency) : 'unknown', sent_to: payer?.name, delivery: r.cart.deliveryAddress ?? 'not set', wallet_eligible: r.walletEligible,
+        note: `Cart card already sent to ${payer?.name} with links and buttons. Tell the author in one line${payer?.id !== authorId ? ` that ${payer?.name} will pay` : ''}; do not repeat the items.` };
     }
     if (name === 'get_profile') {
       const q = GetProfileIn.parse(input);

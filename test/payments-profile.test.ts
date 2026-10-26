@@ -14,6 +14,7 @@ import { canSee, rememberFact, seal, unseal, visibleFacts, profileContext, defau
 import { impactMetrics } from '../src/domovoy/metrics';
 
 const NOW = '2026-10-27T07:00:00.000Z';
+const plus = (iso: string, min: number) => new Date(new Date(iso).getTime() + min * 60_000).toISOString();
 const by = (id: string) => DEMO_FAMILY.find(m => m.id === id)!;
 function mkStore() { return new InMemoryDomovoyStore(DEMO_FAMILY.map(m => ({ ...m, busy: [] })), { householdId: 'h1', tz: 'Asia/Dubai' }); }
 
@@ -151,4 +152,63 @@ test('impact metrics include payments', async () => {
   assert.equal(m.payments.paid, 1);
   assert.equal(m.payments.stoppedByRules, 1);
   assert.equal(m.payments.spent, 25);
+});
+
+// ──────────── shopping level 1: cart → human pays → delivery followed ────────────
+
+test('cart: built with links and address, sent to the payer; child → a parent pays; paid → receive task → verify → loop closed', async () => {
+  const { prepareCart, cartPaid, cartCancel, findMerchant } = await import('../src/domovoy/shopping');
+  const { verification } = await import('../src/domovoy/autonomy');
+  const { markDone } = await import('../src/domovoy/household');
+  assert.equal(findMerchant('carrefour')!.name, 'Carrefour');
+  const store = mkStore();
+  await rememberFact(store, by('mum'), { key: 'home', value: 'Marina Gate 1', kind: 'place' }, NOW);
+  // a child asks → the card goes to an admin, the child is told
+  const r = await prepareCart(store, { requestedBy: 'son', merchant: 'carrefour', items: [{ text: 'Молоко', est_price: 12 }, { text: 'Хлеб', est_price: 6, qty: 2 }] }, NOW);
+  assert.equal(r.cart.payerId, 'mum');
+  assert.equal(r.cart.estimatedTotal, 24);
+  assert.equal(r.cart.deliveryAddress, 'Marina Gate 1');
+  assert.ok(r.cart.lines[0].link?.includes('carrefouruae.com'));
+  assert.equal(r.walletEligible, false);
+  const card = (await store.outbox()).find(m => m.kind === 'cart')!;
+  assert.equal(card.toId, 'mum');
+  assert.equal(card.cartId, r.cart.id);
+  assert.ok((await store.outbox()).some(m => m.toId === 'son' && m.text.includes('только взрослый')));
+  // only the payer / admin can mark it paid
+  assert.equal((await cartPaid(store, r.cart.id, 'granny', NOW)).ok, false);
+  const paid = await cartPaid(store, r.cart.id, 'mum', NOW);
+  assert.equal(paid.ok, true);
+  const cart = (await store.carts()).find(c => c.id === r.cart.id)!;
+  assert.equal(cart.status, 'paid_by_human');
+  const recv = (await store.tasks()).find(t => t.id === cart.receiveTaskId)!;
+  assert.ok(recv && recv.agentManaged && recv.origin === 'followup');
+  assert.ok(recv.assigneeId, 'someone receives the delivery');
+  assert.equal((await store.payments()).filter(p => p.rule === 'human_checkout' && p.status === 'paid').length, 1, 'spend recorded for /impact');
+  // 2h later the agent checks it arrived; done → loop closed to the requester (the child)
+  const v = await verification(store, plus(NOW, 121));
+  assert.ok(v.some(s => s.kind === 'verification'));
+  await markDone(store, recv.id, recv.assigneeId!, plus(NOW, 130));
+  assert.ok((await store.outbox()).some(m => m.kind === 'report' && m.toId === 'son'));
+  // a second cart can be cancelled
+  const r2 = await prepareCart(store, { requestedBy: 'mum', merchant: 'Noon', items: [{ text: 'Губки' }] }, NOW);
+  assert.equal(r2.cart.payerId, 'mum');
+  assert.equal(r2.cart.estimatedTotal, 0);
+  assert.equal((await cartCancel(store, r2.cart.id, 'mum', NOW)).ok, true);
+});
+
+test('cart: wallet-enabled merchant → "pay from the wallet" goes through the payment rules', async () => {
+  const { prepareCart, cartPayFromWallet } = await import('../src/domovoy/shopping');
+  const store = mkStore();
+  const w = await store.wallet(); w.knownMerchants.push({ name: 'Carrefour', category: 'grocery', agentCheckout: true }); w.deliveryAddress = 'home'; await store.saveWallet(w);
+  const small = await prepareCart(store, { requestedBy: 'mum', merchant: 'Carrefour', items: [{ text: 'Молоко', est_price: 12 }] }, NOW);
+  assert.equal(small.walletEligible, true);
+  const ok = await cartPayFromWallet(store, small.cart.id, 'mum', NOW);
+  assert.equal(ok.ok, true);
+  assert.equal((await store.carts()).find(c => c.id === small.cart.id)!.status, 'paid_by_wallet');
+  assert.ok((await store.outbox()).some(m => m.kind === 'receipt'));
+  const big = await prepareCart(store, { requestedBy: 'mum', merchant: 'Carrefour', items: [{ text: 'Велосипед', est_price: 900 }] }, NOW);
+  const r = await cartPayFromWallet(store, big.cart.id, 'mum', NOW);
+  assert.equal(r.ok, false);
+  assert.equal(r.outcome?.outcome, 'pending_approval');
+  assert.equal((await store.carts()).find(c => c.id === big.cart.id)!.status, 'sent', 'cart stays open until the parents decide');
 });

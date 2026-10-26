@@ -28,7 +28,7 @@ export interface WalletPolicy {
   allowedCategories: PaymentCategory[];
   blockedCategories: PaymentCategory[];   // never, not even with approval (gambling-like categories are simply absent)
   childMayOrder: PaymentCategory[];       // a child may trigger these on their own (still within limits)
-  knownMerchants: { name: string; category: PaymentCategory }[];  // first order at an unknown merchant → parents
+  knownMerchants: { name: string; category: PaymentCategory; agentCheckout?: boolean }[];  // first order at an unknown merchant → parents; agentCheckout = the wallet may pay there directly
   deliveryAddress?: string;
   /** provider token — never a card number. 'sim' = built-in sandbox */
   provider: 'sim' | 'stripe_test';

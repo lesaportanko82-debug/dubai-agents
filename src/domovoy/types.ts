@@ -122,12 +122,14 @@ export interface OutgoingMessage {
   toId: string;
   lang: Lang;
   text: string;
-  kind: 'assignment' | 'request' | 'reminder' | 'swap' | 'report' | 'info' | 'approval' | 'verification' | 'autonomous' | 'receipt';
+  kind: 'assignment' | 'request' | 'reminder' | 'swap' | 'report' | 'info' | 'approval' | 'verification' | 'autonomous' | 'receipt' | 'cart';
   taskId?: string;
   /** set for kind = 'approval': the approval the buttons decide */
   approvalId?: string;
   /** set for kind = 'receipt': the payment the refund button undoes */
   paymentId?: string;
+  /** set for kind = 'cart': the cart the buttons act on */
+  cartId?: string;
 }
 
 export interface DispatchRun {

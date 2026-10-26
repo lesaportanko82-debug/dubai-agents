@@ -1,6 +1,7 @@
 import type { Currency } from './policy';
 import type { Payment, WalletPolicy } from './payments';
 import type { ProfileFact } from './profile';
+import type { Cart } from './shopping';
 import { defaultWallet } from './payments';
 import { DEFAULT_THRESHOLD, defaultCurrency } from './policy';
 import type { AgentPlan, Approval, DispatchRun, Goal, HouseholdMode, Lang, Insight, Member, OutgoingMessage, Pattern, Reminder, Task, TaskEvent } from './types';
@@ -60,6 +61,9 @@ export interface DomovoyStore {
   profile(): Promise<ProfileFact[]>;
   saveFact(f: ProfileFact): Promise<void>;
   deleteFact(key: string): Promise<void>;
+  /** Shopping carts the agent prepared */
+  carts(): Promise<Cart[]>;
+  saveCart(c: Cart): Promise<void>;
 }
 
 export class InMemoryDomovoyStore implements DomovoyStore {
@@ -82,6 +86,7 @@ export class InMemoryDomovoyStore implements DomovoyStore {
   private _wallet?: WalletPolicy;
   private _payments: Payment[] = [];
   private _profile: ProfileFact[] = [];
+  private _carts: Cart[] = [];
   private _insightSeq = 0;
   private _patternSeq = 0;
   private _seq = 0;
@@ -179,4 +184,9 @@ export class InMemoryDomovoyStore implements DomovoyStore {
     if (i >= 0) this._profile[i] = f; else this._profile.push(f);
   }
   async deleteFact(key: string) { this._profile = this._profile.filter(f => f.key !== key); }
+  async carts() { return this._carts; }
+  async saveCart(c: Cart) {
+    const i = this._carts.findIndex(x => x.id === c.id);
+    if (i >= 0) this._carts[i] = c; else this._carts.unshift(c);
+  }
 }

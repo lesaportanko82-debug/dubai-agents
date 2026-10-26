@@ -23,6 +23,7 @@ import { learningReport, formatLearning } from './learning';
 import { CURRENCIES, DEFAULT_THRESHOLD, formatMoney, parseCurrency } from './policy';
 import { editWallet, formatWallet, placeOrder, refundPayment } from './payments';
 import { formatProfile, rememberFact, visibleFacts } from './profile';
+import { cartCancel, cartPaid, cartPayFromWallet, prepareCart } from './shopping';
 
 // ---------- Telegram shapes (only what we use) ----------
 export interface TgUser { id: number; first_name?: string; language_code?: string }
@@ -77,7 +78,8 @@ const T = {
     tl: 'Naiintindihan ko: “ok”, “hindi ko kaya”, “tapos na”, larawan bilang patunay.\nCommands: /tasks, /report, /panel, /switch.',
   },
   btnApprove: { ru: 'да, делай ✅', en: 'yes, do it ✅', tl: 'oo, gawin ✅' }, btnReject: { ru: 'нет, оставь', en: 'no, leave it', tl: 'hindi, hayaan' },
-  btnUndo: { ru: '↩️ отменить', en: '↩️ undo', tl: '↩️ bawiin' }, btnRefund: { ru: '↩️ вернуть деньги', en: '↩️ refund', tl: '↩️ ibalik ang pera' }, btnNotDone: { ru: 'не сделано', en: 'not done', tl: 'hindi pa' },
+  btnUndo: { ru: '↩️ отменить', en: '↩️ undo', tl: '↩️ bawiin' }, btnRefund: { ru: '↩️ вернуть деньги', en: '↩️ refund', tl: '↩️ ibalik ang pera' },
+  btnOpenShop: { ru: '🔗 открыть магазин', en: '🔗 open the shop', tl: '🔗 buksan ang tindahan' }, btnPaid: { ru: '✅ оплатил(а)', en: '✅ paid', tl: '✅ nabayaran' }, btnWallet: { ru: '💳 из кошелька семьи', en: '💳 from the family wallet', tl: '💳 mula sa wallet' }, btnNoNeed: { ru: '❌ не нужно', en: '❌ not needed', tl: '❌ hindi na' }, btnNotDone: { ru: 'не сделано', en: 'not done', tl: 'hindi pa' },
   btnOk: { ru: 'ок ✅', en: 'ok ✅', tl: 'ok ✅' }, btnNo: { ru: 'не могу', en: "can't", tl: 'hindi ko kaya' }, btnLater: { ru: 'могу через 2 ч', en: 'can in 2 h', tl: 'mamaya (2 h)' }, btnDone: { ru: 'готово 🎉', en: 'done 🎉', tl: 'tapos na 🎉' },
 } as const;
 const t = <K extends keyof typeof T>(k: K, l: Lang) => (T[k] as any)[ui(l)] as (typeof T)[K]['en'];
@@ -136,8 +138,19 @@ function waitingTask(tasks: Task[], memberId: string, statuses: Task['status'][]
   return tasks.filter(x => x.assigneeId === memberId && statuses.includes(x.status)).sort((a, b) => (b.assignedAt ?? b.createdAt).localeCompare(a.assignedAt ?? a.createdAt))[0];
 }
 
-function keyboardFor(msg: OutgoingMessage, m: Member, task?: Task): Button[][] | undefined {
+function keyboardFor(msg: OutgoingMessage, m: Member, task?: Task, extra?: { cartUrl?: string; walletEligible?: boolean; lineLinks?: { text: string; url: string }[] }): Button[][] | undefined {
   const l = m.lang;
+  // a shopping cart: open the shop (+ per-item search links), paid, wallet, not needed
+  if (msg.kind === 'cart' && msg.cartId) {
+    const rows: Button[][] = [];
+    if (extra?.cartUrl) rows.push([{ text: t('btnOpenShop', l), data: '', url: extra.cartUrl }]);
+    for (const ln of (extra?.lineLinks ?? []).slice(0, 6)) rows.push([{ text: `🔍 ${ln.text.slice(0, 30)}`, data: '', url: ln.url }]);
+    const act: Button[] = [{ text: t('btnPaid', l), data: `cp:${msg.cartId}` }];
+    if (extra?.walletEligible) act.push({ text: t('btnWallet', l), data: `cw:${msg.cartId}` });
+    act.push({ text: t('btnNoNeed', l), data: `cc:${msg.cartId}` });
+    rows.push(act);
+    return rows;
+  }
   // human checkpoint: approve / reject
   if (msg.kind === 'approval' && msg.approvalId) return [[{ text: t('btnApprove', l), data: `ap:${msg.approvalId}` }, { text: t('btnReject', l), data: `rj:${msg.approvalId}` }]];
   // a paid order → one-tap refund
@@ -172,6 +185,8 @@ function keyboardFor(msg: OutgoingMessage, m: Member, task?: Task): Button[][] |
 export async function flushOutbox(store: DomovoyStore, send: TgSender): Promise<number> {
   const [members, tasks, msgs] = await Promise.all([store.members(), store.tasks(), store.pending()]);
   if (!msgs.length) return 0;
+  const carts = msgs.some(m => m.kind === 'cart') ? await store.carts() : [];
+  const wallet = carts.length ? await store.wallet() : undefined;
   const admins = members.filter(m => m.isAdmin && m.telegramId);
   const delivered: (string | number)[] = [];
   for (const msg of msgs) {
@@ -179,7 +194,9 @@ export async function flushOutbox(store: DomovoyStore, send: TgSender): Promise<
     if (!m) continue;
     const task = tasks.find(x => x.id === msg.taskId);
     if (m.telegramId) {
-      await send.sendMessage(m.telegramId, msg.text, keyboardFor(msg, m, task));
+      const cart = msg.cartId ? carts.find(c => c.id === msg.cartId) : undefined;
+      const extra = cart ? { cartUrl: cart.homeUrl, walletEligible: !!wallet?.knownMerchants.find(k => k.name.toLowerCase() === cart.merchant.toLowerCase() && k.agentCheckout), lineLinks: cart.lines.filter(l => l.link).map(l => ({ text: l.text, url: l.link! })) } : undefined;
+      await send.sendMessage(m.telegramId, msg.text, keyboardFor(msg, m, task, extra));
     } else {
       for (const a of admins) await send.sendMessage(a.telegramId!, `📨 → ${m.name}:\n${msg.text}`);
     }
@@ -218,6 +235,16 @@ export async function handleUpdate(store: DomovoyStore, upd: TgUpdate, deps: Tel
     }
     const me = byChat(members, chatId);
     if (!me) { await send.answerCallback(cq.id); await askWho(); return; }
+    if (op === 'cp' || op === 'cw' || op === 'cc') {
+      try {
+        const r = op === 'cp' ? await cartPaid(store, arg, me.id, now) : op === 'cw' ? await cartPayFromWallet(store, arg, me.id, now) : await cartCancel(store, arg, me.id, now);
+        await send.answerCallback(cq.id, r.ok ? '✅' : '🔒');
+        if (r.ok && cq.message) await send.clearKeyboard(chatId, cq.message.message_id);
+        await send.sendMessage(chatId, me.lang === 'ru' ? r.note.ru : r.note.en);
+      } catch (e: any) { await send.answerCallback(cq.id, '⌛'); await send.sendMessage(chatId, `⚠️ ${e?.message ?? String(e)}`); }
+      await flush();
+      return;
+    }
     if (op === 'rf') {
       try {
         const r = await refundPayment(store, arg, me.id, now);
@@ -401,15 +428,26 @@ export async function handleUpdate(store: DomovoyStore, upd: TgUpdate, deps: Tel
     return;
   }
   // /demo rain|heat|storm — admin-only: run the autonomous scenarios against synthetic weather (for the showcase)
-  const demoMatch = text.match(/^\/demo(?:\s+(rain|heat|storm|dry|pay))?/i);
+  const demoMatch = text.match(/^\/demo(?:\s+(rain|heat|storm|dry|pay|cart))?/i);
   if (demoMatch) {
     if (!me.isAdmin) { await send.sendMessage(chatId, me.lang === 'ru' ? 'Только для администраторов.' : 'Admins only.'); return; }
+    if (demoMatch[1]?.toLowerCase() === 'cart') {
+      // showcase: the agent builds a Carrefour cart with links; the person pays in the app, then the agent follows the delivery
+      const w = await store.wallet();
+      if (!w.deliveryAddress) { await editWallet(store, 'address', 'Dubai Marina, Marina Gate 1, apt 1204', me.lang); await rememberFact(store, me, { key: 'home', value: 'Dubai Marina, Marina Gate 1, apt 1204', kind: 'place', access: 'family' }, now); }
+      const r = await prepareCart(store, { requestedBy: me.id, merchant: 'Carrefour', category: 'grocery', items: me.lang === 'ru'
+        ? [{ text: 'Молоко 2 л', est_price: 12 }, { text: 'Хлеб', est_price: 6 }, { text: 'Яйца 12 шт', qty: 1, est_price: 18 }, { text: 'Бананы 1 кг', est_price: 8 }]
+        : [{ text: 'Milk 2 l', est_price: 12 }, { text: 'Bread', est_price: 6 }, { text: 'Eggs 12', est_price: 18 }, { text: 'Bananas 1 kg', est_price: 8 }] }, now);
+      await flush();
+      await send.sendMessage(chatId, me.lang === 'ru' ? `🎬 Демо корзины: ${r.cart.lines.length} позиции ≈ ${r.cart.estimatedTotal} ${r.cart.currency}. Нажмите «оплатил(а)» — увидите, как агент ведёт доставку до конца.` : `🎬 Cart demo: ${r.cart.lines.length} items ≈ ${r.cart.estimatedTotal} ${r.cart.currency}. Press "paid" to watch the agent follow the delivery to the end.`);
+      return;
+    }
     if (demoMatch[1]?.toLowerCase() === 'pay') {
       // showcase: an order inside the rules is paid with a receipt + refund; a big one is declined by the card and goes to the parents
       const w = await store.wallet();
       if (!w.deliveryAddress) { await editWallet(store, 'address', 'Dubai Marina, Marina Gate 1, apt 1204', me.lang); await rememberFact(store, me, { key: 'home', value: 'Dubai Marina, Marina Gate 1, apt 1204', kind: 'place', access: 'family' }, now); }
       const w2 = await store.wallet();
-      if (!w2.knownMerchants.some(m => m.name === 'Carrefour')) { w2.knownMerchants.push({ name: 'Carrefour', category: 'grocery' }); await store.saveWallet(w2); }
+      if (!w2.knownMerchants.some(m => m.name === 'Carrefour')) { w2.knownMerchants.push({ name: 'Carrefour', category: 'grocery', agentCheckout: true }); await store.saveWallet(w2); }
       const small = Math.max(1, Math.round(w2.perTxLimit / 6));
       const big = Math.round(w2.perTxLimit * 3.3);
       const r1 = await placeOrder(store, { requestedBy: me.id, merchant: 'Carrefour', category: 'grocery', amount: small, items: me.lang === 'ru' ? 'Молоко 2 л, хлеб' : 'Milk 2 l, bread' }, now);

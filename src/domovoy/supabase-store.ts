@@ -17,6 +17,7 @@ import type { HouseholdMode } from './types';
 import { DEFAULT_THRESHOLD, defaultCurrency, type Currency } from './policy';
 import { defaultWallet, type Payment, type WalletPolicy } from './payments';
 import { seal, unseal, SENSITIVE_KEY_RE, type ProfileFact } from './profile';
+import type { Cart } from './shopping';
 
 type Row = Record<string, any>;
 
@@ -145,10 +146,10 @@ export class SupabaseDomovoyStore implements DomovoyStore {
   }
 
   async send(m: OutgoingMessage) {
-    const { error } = await this.sb.from('dm_outbox').insert({ household_id: this.householdId, at: m.at, to_member: m.toId, lang: m.lang, text: m.text, kind: m.kind, task_id: m.taskId ?? null, approval_id: m.approvalId ?? null, payment_id: m.paymentId ?? null });
+    const { error } = await this.sb.from('dm_outbox').insert({ household_id: this.householdId, at: m.at, to_member: m.toId, lang: m.lang, text: m.text, kind: m.kind, task_id: m.taskId ?? null, approval_id: m.approvalId ?? null, payment_id: m.paymentId ?? null, cart_id: m.cartId ?? null });
     fail('send', error);
   }
-  private msgFromRow = (r: Row): OutgoingMessage => ({ id: r.id, at: r.at, toId: r.to_member, lang: r.lang, text: r.text, kind: r.kind, taskId: r.task_id ?? undefined, approvalId: r.approval_id ?? undefined, paymentId: r.payment_id ?? undefined });
+  private msgFromRow = (r: Row): OutgoingMessage => ({ id: r.id, at: r.at, toId: r.to_member, lang: r.lang, text: r.text, kind: r.kind, taskId: r.task_id ?? undefined, approvalId: r.approval_id ?? undefined, paymentId: r.payment_id ?? undefined, cartId: r.cart_id ?? undefined });
   async outbox() {
     const { data, error } = await this.sb.from('dm_outbox').select('*').eq('household_id', this.householdId).order('id', { ascending: false }).limit(200);
     fail('outbox', error);
@@ -335,6 +336,17 @@ export class SupabaseDomovoyStore implements DomovoyStore {
   async deleteFact(key: string) {
     const { error } = await this.sb.from('dm_profile').delete().eq('household_id', this.householdId).eq('key', key);
     fail('deleteFact', error);
+  }
+
+  // ── Shopping carts — dm_carts (the cart is one JSON document) ──
+  async carts() {
+    const { data, error } = await this.sb.from('dm_carts').select('data').eq('household_id', this.householdId).order('created_at', { ascending: false }).limit(200);
+    fail('carts', error);
+    return (data ?? []).map(r => r.data as Cart);
+  }
+  async saveCart(c: Cart) {
+    const { error } = await this.sb.from('dm_carts').upsert({ id: c.id, household_id: this.householdId, status: c.status, created_at: c.createdAt, data: c });
+    fail('saveCart', error);
   }
 }
 
