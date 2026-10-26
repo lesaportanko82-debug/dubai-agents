@@ -42,7 +42,7 @@ export function defaultWallet(currency: Currency): WalletPolicy {
     blockedCategories: ['subscriptions', 'electronics', 'entertainment'],
     childMayOrder: [],
     knownMerchants: [],
-    provider: process.env.STRIPE_SECRET_KEY?.startsWith('sk_test_') ? 'stripe_test' : 'sim',
+    provider: process.env.STRIPE_SECRET_KEY?.startsWith('sk_test_') || process.env.STRIPE_SECRET_KEY?.startsWith('rk_test_') ? 'stripe_test' : 'sim',
   };
 }
 
@@ -111,7 +111,7 @@ export function stripeTestProvider(secretKey: string): PaymentProvider {
       const minor = Math.round(p.amount * 100);
       const { ok, json } = await api('/payment_intents', {
         amount: String(minor), currency: p.currency.toLowerCase(),
-        'payment_method_types[]': 'card',
+        'automatic_payment_methods[enabled]': 'true', 'automatic_payment_methods[allow_redirects]': 'never',
         payment_method: opts.forceDecline ? 'pm_card_visa_chargeDeclined' : 'pm_card_visa',
         confirm: 'true',
         description: `Domovoy · ${p.merchant} · ${p.items}`.slice(0, 200),
@@ -132,7 +132,7 @@ export function stripeTestProvider(secretKey: string): PaymentProvider {
 
 export function providerFor(wallet: WalletPolicy): PaymentProvider {
   const key = process.env.STRIPE_SECRET_KEY?.trim();
-  if (wallet.provider === 'stripe_test' && key?.startsWith('sk_test_')) return stripeTestProvider(key);
+  if (wallet.provider === 'stripe_test' && key && (key.startsWith('sk_test_') || key.startsWith('rk_test_'))) return stripeTestProvider(key);
   return simProvider;
 }
 
