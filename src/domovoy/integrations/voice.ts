@@ -18,11 +18,13 @@ export interface TranscriptionResult {
 
 /** Transcribe a voice message from Telegram. */
 export async function transcribeVoice(fileId: string): Promise<TranscriptionResult> {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const openaiKey = process.env.OPENAI_API_KEY;
+  // the Domovoy bot's own token: a file_id is only downloadable by the bot that received it
+  const token = (process.env.DOMOVOY_TELEGRAM_TOKEN ?? process.env.TELEGRAM_BOT_TOKEN)?.trim();
+  const openaiKey = process.env.OPENAI_API_KEY?.trim();
 
   if (!token || !openaiKey) {
-    return demoTranscription();
+    if (process.env.NODE_ENV === 'test') return demoTranscription();
+    throw new Error('speech recognition is not configured (OPENAI_API_KEY / DOMOVOY_TELEGRAM_TOKEN)');
   }
 
   try {
