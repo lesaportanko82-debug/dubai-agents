@@ -27,8 +27,8 @@ export default async function TracePage() {
   return (
     <>
       <PageTitle title={ru ? 'Как решал агент' : 'Agent decisions'} lead={ru ? 'Каждое решение с объяснением. Слева — прогоны (что сказали Домовёнку и что он сделал), справа — журнал событий по делам.' : 'Every decision with its reason. Left: runs (what Domovoy was told and what it did). Right: the event log per task.'} />
-      <div className="grid lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] gap-5 items-start">
-        <div className="space-y-5">
+      <div className="grid grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] gap-5 items-start">
+        <div className="space-y-5 min-w-0">
           {runs.length === 0 && <Panel><Empty>{ru ? 'Прогонов пока нет. Отправьте сообщение в разделе «Попробовать».' : 'No runs yet. Send a message in “Try it”.'}</Empty></Panel>}
           {runs.slice(0, 5).map(r => (
             <Panel key={r.id}>
