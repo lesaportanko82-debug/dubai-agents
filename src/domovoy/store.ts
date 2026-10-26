@@ -1,10 +1,12 @@
-import type { AgentPlan, DispatchRun, Goal, HouseholdMode, Insight, Member, OutgoingMessage, Pattern, Reminder, Task, TaskEvent } from './types';
+import type { AgentPlan, Approval, DispatchRun, Goal, HouseholdMode, Lang, Insight, Member, OutgoingMessage, Pattern, Reminder, Task, TaskEvent } from './types';
 
 export interface DomovoyStore {
   /** household this store is scoped to */
   readonly householdId: string;
   readonly tz: string;
   readonly mode: HouseholdMode;
+  /** family language for texts the agent writes on its own */
+  readonly lang: Lang;
   members(): Promise<Member[]>;
   saveMember(m: Member): Promise<void>;
   removeMember(id: string): Promise<void>;
@@ -38,12 +40,16 @@ export interface DomovoyStore {
   insights(opts?: { delivered?: boolean; limit?: number }): Promise<Insight[]>;
   saveInsight(i: Insight): Promise<void>;
   markInsightDelivered(id: number): Promise<void>;
+  /** Human checkpoints: approvals the agent asked for */
+  approvals(opts?: { status?: Approval['status']; limit?: number }): Promise<Approval[]>;
+  saveApproval(a: Approval): Promise<void>;
 }
 
 export class InMemoryDomovoyStore implements DomovoyStore {
   readonly householdId: string;
   readonly tz: string;
   readonly mode: HouseholdMode;
+  readonly lang: Lang;
   private _tasks: Task[] = [];
   private _events: TaskEvent[] = [];
   private _outbox: OutgoingMessage[] = [];
@@ -53,13 +59,15 @@ export class InMemoryDomovoyStore implements DomovoyStore {
   private _plans: AgentPlan[] = [];
   private _reminders: Reminder[] = [];
   private _insights: Insight[] = [];
+  private _approvals: Approval[] = [];
   private _insightSeq = 0;
   private _patternSeq = 0;
   private _seq = 0;
-  constructor(private _members: Member[], opts: { householdId?: string; tz?: string; mode?: HouseholdMode } = {}) {
+  constructor(private _members: Member[], opts: { householdId?: string; tz?: string; mode?: HouseholdMode; lang?: Lang } = {}) {
     this.householdId = opts.householdId ?? 'demo';
     this.tz = opts.tz ?? 'Asia/Dubai';
     this.mode = opts.mode ?? 'classic';
+    this.lang = opts.lang ?? 'ru';
   }
   async members() { return this._members; }
   async saveMember(m: Member) {
@@ -124,5 +132,14 @@ export class InMemoryDomovoyStore implements DomovoyStore {
   async markInsightDelivered(id: number) {
     const i = this._insights.find(x => x.id === id);
     if (i) i.delivered = true;
+  }
+  async approvals(opts?: { status?: Approval['status']; limit?: number }) {
+    let r = this._approvals;
+    if (opts?.status) r = r.filter(x => x.status === opts.status);
+    return r.slice(0, opts?.limit ?? 100);
+  }
+  async saveApproval(a: Approval) {
+    const i = this._approvals.findIndex(x => x.id === a.id);
+    if (i >= 0) this._approvals[i] = a; else this._approvals.unshift(a);
   }
 }

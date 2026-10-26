@@ -14,6 +14,7 @@ const dict = {
     d_tasks: 'Доска дел',
     d_trace: 'Как решал агент',
     d_fairness: 'Справедливость',
+    d_impact: 'Эффект',
     d_sim: 'Попробовать',
     // nav owed
     o_home: 'Книга долга',
@@ -45,6 +46,7 @@ const dict = {
     d_tasks: 'Task board',
     d_trace: 'Agent decisions',
     d_fairness: 'Fairness',
+    d_impact: 'Impact',
     d_sim: 'Try it',
     o_home: 'Debt ledger',
     o_cases: 'Cases',

@@ -12,6 +12,8 @@ import { KID_SKILLS } from './fixtures';
 import { patternContext } from './memory';
 import { getWeather, analyzeWeatherAlerts, formatWeatherForAgent } from './integrations';
 import { checkCalendar, checkFamilyCalendars } from './integrations';
+import { MONEY_THRESHOLD, executeAction, requestApproval, touchesChild } from './approvals';
+import { decideAutonomy } from './learning';
 
 function hourIn(iso: string, tz: string): number {
   return parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', hour12: false }).format(new Date(iso)));
@@ -65,6 +67,23 @@ const CheckWeatherIn = z.object({
 const CheckCalendarIn = z.object({
   member_id: z.string().optional(),
   hours_ahead: z.number().optional(),
+});
+const RescheduleIn = z.object({
+  task_id: z.string(),
+  new_due_at: z.string(),
+  reason: z.string().min(3).max(200),
+});
+const RequestApprovalIn = z.object({
+  action: z.enum(['spend_money', 'cancel_task', 'share_outside', 'change_child_schedule', 'reschedule_task']),
+  reason_ru: z.string().min(3).max(300),
+  reason_en: z.string().min(3).max(300),
+  task_id: z.string().optional(),
+  amount: z.number().optional(),
+  currency: z.string().optional(),
+  purpose: z.string().optional(),
+  new_due_at: z.string().optional(),
+  what: z.string().optional(),
+  to: z.string().optional(),
 });
 
 export const DISPATCH_TOOLS: ToolDef[] = [
@@ -162,8 +181,32 @@ export const DISPATCH_TOOLS: ToolDef[] = [
     },
   },
   {
+    name: 'reschedule_task',
+    description: 'Move an existing task to a new time. If the task touches a child (child executor, or the task is about a child) and the author is not a parent, this automatically becomes an approval request to the parents instead of a direct change. Returns what happened.',
+    input_schema: {
+      type: 'object',
+      properties: { task_id: { type: 'string' }, new_due_at: { type: 'string', description: 'ISO 8601 with offset' }, reason: { type: 'string', description: 'One line: why move it' } },
+      required: ['task_id', 'new_due_at', 'reason'],
+    },
+  },
+  {
+    name: 'request_approval',
+    description: `Human checkpoint. MUST be used instead of acting when the request involves: spending money above ${MONEY_THRESHOLD.amount} ${MONEY_THRESHOLD.currency} (spend_money), cancelling someone else's task (cancel_task), sending family data to someone outside the household (share_outside), or changing a child's fixed activity (change_child_schedule). Creates a pending decision for the right people (parents/admins) with approve/reject buttons and returns its id. Do not promise the outcome — say it is awaiting approval.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['spend_money', 'cancel_task', 'share_outside', 'change_child_schedule', 'reschedule_task'] },
+        reason_ru: { type: 'string', description: 'What exactly will happen if approved, in Russian, one or two lines' },
+        reason_en: { type: 'string', description: 'Same in English' },
+        task_id: { type: 'string' }, amount: { type: 'number' }, currency: { type: 'string' }, purpose: { type: 'string' },
+        new_due_at: { type: 'string' }, what: { type: 'string' }, to: { type: 'string' },
+      },
+      required: ['action', 'reason_ru', 'reason_en'],
+    },
+  },
+  {
     name: 'assign',
-    description: 'Assign one task to one ALLOWED member and send them your message. Returns confirmation or an error with the allowed list.',
+    description: 'Assign one task to one ALLOWED member and send them your message. Returns confirmation (with the autonomy level and the learned reason behind it) or an error with the allowed list.',
     input_schema: {
       type: 'object',
       properties: { task_id: { type: 'string' }, member_id: { type: 'string' }, reason: { type: 'string', description: 'One line: why this person' }, message: { type: 'string', description: "Personal message in the recipient's language" } },
@@ -385,13 +428,48 @@ export async function runDispatch(client: ModelClient, store: DomovoyStore, auth
       }
       return { tasks: out };
     }
+    if (name === 'reschedule_task') {
+      const r = RescheduleIn.parse(input);
+      const all = await store.tasks();
+      const t = created.find(x => x.id === r.task_id) ?? all.find(x => x.id === r.task_id);
+      if (!t) throw new Error('unknown task_id');
+      const kid = touchesChild(t, members);
+      if (kid && !author!.isAdmin) {
+        const ap = await requestApproval(store, { action: 'change_child_schedule', payload: { taskId: t.id, newDueAt: r.new_due_at },
+          reason: { ru: `${author!.name} просит перенести «${t.text}» на ${r.new_due_at.slice(11, 16)}: ${r.reason}`, en: `${author!.name} asks to move "${t.text}" to ${r.new_due_at.slice(11, 16)}: ${r.reason}` },
+          requestedBy: authorId, authorId: t.authorId, taskId: t.id }, now);
+        return { ok: true, pending_approval: ap.id, approvers: ap.approverIds, note: 'Touches a child\'s schedule → parents must approve. Tell the author it is awaiting approval.' };
+      }
+      const res = await executeAction(store, 'reschedule_task', { taskId: t.id, newDueAt: r.new_due_at }, now, { decidedBy: authorId });
+      return { ok: true, ...res, verification_at: t.verifyAt, note: 'Moved. The agent will verify it happened and report to the author.' };
+    }
+    if (name === 'request_approval') {
+      const r = RequestApprovalIn.parse(input);
+      const payload: Record<string, unknown> = {};
+      if (r.task_id) payload.taskId = r.task_id;
+      if (r.action === 'spend_money') { if (r.amount === undefined) throw new Error('amount required'); Object.assign(payload, { amount: r.amount, currency: r.currency ?? MONEY_THRESHOLD.currency, purpose: r.purpose ?? '' }); }
+      if (r.action === 'reschedule_task' || r.action === 'change_child_schedule') { if (!r.new_due_at || !r.task_id) throw new Error('task_id and new_due_at required'); payload.newDueAt = r.new_due_at; }
+      if (r.action === 'cancel_task' && !r.task_id) throw new Error('task_id required');
+      if (r.action === 'share_outside') Object.assign(payload, { what: r.what ?? '', to: r.to ?? '' });
+      const taskAuthor = r.task_id ? (await store.tasks()).find(x => x.id === r.task_id)?.authorId : undefined;
+      const ap = await requestApproval(store, { action: r.action, payload, reason: { ru: r.reason_ru, en: r.reason_en }, requestedBy: authorId, authorId: taskAuthor ?? authorId, taskId: r.task_id }, now);
+      return { ok: true, approval_id: ap.id, approvers: ap.approverIds.map(id => members.find(m => m.id === id)?.name ?? id), expires_at: ap.expiresAt, note: 'Pending. Tell the author who decides and that nothing happens until they approve.' };
+    }
     if (name === 'assign') {
       const a = AssignIn.parse(input);
       const t = created.find(x => x.id === a.task_id);
       if (!t) throw new Error('unknown task_id');
       if (t.assigneeId) throw new Error('task already assigned');
+      // Visible learning: how much history backs this choice, and say so to the author
+      const decision = decideAutonomy({ tasks: await store.tasks(), patterns: await store.patterns(), members, chore: t, candidateId: a.member_id });
+      t.decision = decision;
       await assignTask(store, t, a.member_id, a.reason, now, redact(a.message).text);
       const m = members.find(x => x.id === a.member_id)!;
+      if (decision.level !== 'remind' && t.authorId !== a.member_id) {
+        const au = members.find(x => x.id === authorId)!;
+        await store.send({ at: now, toId: au.id, lang: au.lang, kind: 'info', taskId: t.id,
+          text: au.lang === 'ru' ? `🧠 ${m.name} — «${t.text}»: ${decision.why.ru}` : `🧠 ${m.name} — "${t.text}": ${decision.why.en}` });
+      }
 
       // P2.3 Mutual assignment detection: if B assigned a task to A within 5 min, warn both
       const fiveAgo = new Date(new Date(now).getTime() - 5 * 60_000).toISOString();
@@ -412,7 +490,7 @@ export async function runDispatch(client: ModelClient, store: DomovoyStore, auth
         await store.send({ at: now, toId: a.member_id, lang: m.lang, kind: 'info', text: mutualMsg(m.lang) });
       }
 
-      return { ok: true, task_id: t.id, assigned_to: m.name, lang: m.lang, ...(mutual ? { mutual_assignment_warning: true } : {}) };
+      return { ok: true, task_id: t.id, assigned_to: m.name, lang: m.lang, autonomy: decision.level, confidence: decision.confidence, learned_reason: decision.why.en, ...(mutual ? { mutual_assignment_warning: true } : {}) };
     }
     throw new Error(`Unknown tool ${name}`);
   }

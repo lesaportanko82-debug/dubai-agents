@@ -12,7 +12,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { randomBytes, randomUUID } from 'node:crypto';
 import type { DomovoyStore } from './store';
-import type { AgentPlan, DispatchRun, Goal, Household, Insight, Lang, Member, MessageStyle, OutgoingMessage, Pattern, Reminder, Task, TaskEvent } from './types';
+import type { AgentPlan, Approval, DispatchRun, Goal, Household, Insight, Lang, Member, MessageStyle, OutgoingMessage, Pattern, Reminder, Task, TaskEvent } from './types';
 import type { HouseholdMode } from './types';
 
 type Row = Record<string, any>;
@@ -66,12 +66,20 @@ const insightFromRow = (r: Row): Insight => ({
   delivered: r.delivered, createdAt: r.created_at,
 });
 
+const approvalFromRow = (r: Row): Approval => ({
+  id: r.id, householdId: r.household_id, action: r.action, requestedBy: r.requested_by,
+  approverIds: r.approver_ids ?? [], payload: r.payload ?? {}, reason: r.reason, fallback: r.fallback ?? undefined,
+  status: r.status, createdAt: r.created_at, expiresAt: r.expires_at,
+  decidedAt: r.decided_at ?? undefined, decidedBy: r.decided_by ?? undefined, result: r.result ?? undefined,
+});
+
 function fail(where: string, error: { message: string } | null) { if (error) throw new Error(`${where}: ${error.message}`); }
 
 export class SupabaseDomovoyStore implements DomovoyStore {
   readonly householdId: string;
   readonly tz: string;
   readonly mode: HouseholdMode;
+  readonly lang: Lang;
   private _members?: Member[];
   private _tasks?: Task[];
   private _events?: TaskEvent[];
@@ -79,6 +87,7 @@ export class SupabaseDomovoyStore implements DomovoyStore {
     this.householdId = household.id;
     this.tz = household.tz;
     this.mode = household.mode;
+    this.lang = household.lang;
   }
 
   async members() {
@@ -129,10 +138,10 @@ export class SupabaseDomovoyStore implements DomovoyStore {
   }
 
   async send(m: OutgoingMessage) {
-    const { error } = await this.sb.from('dm_outbox').insert({ household_id: this.householdId, at: m.at, to_member: m.toId, lang: m.lang, text: m.text, kind: m.kind, task_id: m.taskId ?? null });
+    const { error } = await this.sb.from('dm_outbox').insert({ household_id: this.householdId, at: m.at, to_member: m.toId, lang: m.lang, text: m.text, kind: m.kind, task_id: m.taskId ?? null, approval_id: m.approvalId ?? null });
     fail('send', error);
   }
-  private msgFromRow = (r: Row): OutgoingMessage => ({ id: r.id, at: r.at, toId: r.to_member, lang: r.lang, text: r.text, kind: r.kind, taskId: r.task_id ?? undefined });
+  private msgFromRow = (r: Row): OutgoingMessage => ({ id: r.id, at: r.at, toId: r.to_member, lang: r.lang, text: r.text, kind: r.kind, taskId: r.task_id ?? undefined, approvalId: r.approval_id ?? undefined });
   async outbox() {
     const { data, error } = await this.sb.from('dm_outbox').select('*').eq('household_id', this.householdId).order('id', { ascending: false }).limit(200);
     fail('outbox', error);
@@ -248,6 +257,24 @@ export class SupabaseDomovoyStore implements DomovoyStore {
   async markInsightDelivered(id: number) {
     const { error } = await this.sb.from('dm_insights').update({ delivered: true }).eq('id', id);
     fail('markInsightDelivered', error);
+  }
+
+  // ── Human checkpoints — dm_approvals ──
+  async approvals(opts?: { status?: Approval['status']; limit?: number }) {
+    let q = this.sb.from('dm_approvals').select('*').eq('household_id', this.householdId);
+    if (opts?.status) q = q.eq('status', opts.status);
+    const { data, error } = await q.order('created_at', { ascending: false }).limit(opts?.limit ?? 100);
+    fail('approvals', error);
+    return (data ?? []).map(approvalFromRow);
+  }
+  async saveApproval(a: Approval) {
+    const { error } = await this.sb.from('dm_approvals').upsert({
+      id: a.id, household_id: this.householdId, action: a.action, requested_by: a.requestedBy,
+      approver_ids: a.approverIds, payload: a.payload, reason: a.reason, fallback: a.fallback ?? null,
+      status: a.status, created_at: a.createdAt, expires_at: a.expiresAt,
+      decided_at: a.decidedAt ?? null, decided_by: a.decidedBy ?? null, result: a.result ?? null,
+    });
+    fail('saveApproval', error);
   }
 }
 

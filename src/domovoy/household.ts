@@ -8,7 +8,9 @@ import { rankCandidates, type AssignContext } from './tools/assign';
 import { dueReminders } from './tools/reminders';
 import { balanceSuggestion, weeklyLedger, weekBounds } from './tools/fairness';
 import { detectPatterns } from './memory';
-import { getWeather, analyzeWeatherAlerts, type WeatherAlert } from './integrations';
+import { getWeather, analyzeWeatherAlerts, type WeatherAlert, type WeatherData } from './integrations';
+import { runAutonomy, reportLoopClosed } from './autonomy';
+import { expireApprovals } from './approvals';
 
 /** Policy knobs (per family in production). */
 export const POLICY = {
@@ -165,6 +167,12 @@ export async function markDone(store: DomovoyStore, taskId: string, memberId: st
   t.doneAt = nowIso;
   await store.saveTask(t);
   await store.event({ at: nowIso, taskId, actor: memberId, type: 'done', details: t.proofUrl ? { proof: t.proofUrl } : undefined });
+  if (t.verifyAsked) await store.event({ at: nowIso, taskId, actor: memberId, type: 'verified' });
+  // the agent created or moved this task itself → it closes the loop with the author
+  if (t.agentManaged) {
+    const by = (await store.members()).find(m => m.id === memberId);
+    if (by) await reportLoopClosed(store, t, by, nowIso);
+  }
   return { task: t, needProof: false };
 }
 
@@ -221,7 +229,7 @@ export async function tick(store: DomovoyStore, nowIso: string) {
     if (remaining > TWO_DAYS_MS || remaining <= 0) continue;
     if (g.threshold === 0 || g.progress / g.threshold >= 0.5) continue;
     // Already warned? Check events for this goal
-    const warned = (await store.events()).some(e => e.type === 'info' as string && e.details?.goalId === g.id && e.details?.kind === 'difficulty_warning');
+    const warned = (await store.events()).some(e => e.type === 'info' && e.details?.goalId === g.id && e.details?.kind === 'difficulty_warning');
     if (warned) continue;
     const admins = members.filter(m => m.isAdmin);
     const target = byId.get(g.targetMemberId);
@@ -232,7 +240,7 @@ export async function tick(store: DomovoyStore, nowIso: string) {
           `⚠️ Goal "${g.title}" for ${target?.name ?? '?'}: progress ${g.progress}/${g.threshold} — may be too hard. Lower the target or extend?`) });
       sent.push({ kind: 'goal_warning', toId: admin.id, text: g.title });
     }
-    await store.event({ at: nowIso, taskId: g.id, actor: 'agent', type: 'info' as any, details: { goalId: g.id, kind: 'difficulty_warning' } });
+    await store.event({ at: nowIso, taskId: g.id, actor: 'agent', type: 'info', details: { goalId: g.id, kind: 'difficulty_warning' } });
   }
 
   // ── Pillar 3: Deliver pending reminders ──
@@ -258,22 +266,25 @@ export async function tick(store: DomovoyStore, nowIso: string) {
   }
 
   // ── Pillar 1: Run pattern detection (once per hour max) ──
-  const lastPatternRun = (await store.events()).filter(e => e.type === 'info' as any && e.details?.kind === 'pattern_detection').pop();
+  const lastPatternRun = (await store.events()).filter(e => e.type === 'info' && e.details?.kind === 'pattern_detection').pop();
   const hoursSincePatterns = lastPatternRun ? (now - t2(lastPatternRun.at)) / 3_600_000 : Infinity;
   if (hoursSincePatterns >= 1) {
     await detectPatterns(store, nowIso);
-    await store.event({ at: nowIso, taskId: 'system', actor: 'agent', type: 'info' as any, details: { kind: 'pattern_detection' } });
+    await store.event({ at: nowIso, taskId: 'system', actor: 'agent', type: 'info', details: { kind: 'pattern_detection' } });
   }
 
+  // ── Human checkpoints: stale approvals expire, requester is told ──
+  for (const a of await expireApprovals(store, nowIso)) sent.push({ kind: 'approval_expired', toId: a.requestedBy, text: a.action });
+
   // ── Proactive weather check (once per hour) ──
-  const lastWeatherRun = (await store.events()).filter(e => e.type === 'info' as any && e.details?.kind === 'weather_check').pop();
+  let weather: WeatherData | undefined;
+  const lastWeatherRun = (await store.events()).filter(e => e.type === 'info' && e.details?.kind === 'weather_check').pop();
   const hoursSinceWeather = lastWeatherRun ? (now - t2(lastWeatherRun.at)) / 3_600_000 : Infinity;
   if (hoursSinceWeather >= 1) {
     try {
-      const weather = await getWeather({ city: 'Dubai' });
+      weather = await getWeather({ city: 'Dubai', nowIso });
       const alerts = analyzeWeatherAlerts(weather);
       if (alerts.length > 0) {
-        // Create weather_alert insights for admins
         const recentInsights = await store.insights({ limit: 20 });
         const lastHourAlerts = recentInsights.filter(i => i.insightType === 'weather_alert' && t2(i.createdAt) > now - 3_600_000);
         if (lastHourAlerts.length === 0) {
@@ -281,22 +292,39 @@ export async function tick(store: DomovoyStore, nowIso: string) {
           for (const m of members.filter(m => m.isAdmin)) {
             const ins: Insight = {
               householdId: store.householdId, insightType: 'weather_alert',
-              targetMemberId: m.id, delivered: false, createdAt: nowIso,
+              targetMemberId: m.id, delivered: true, createdAt: nowIso,
               data: { alerts: alerts.map((a: WeatherAlert) => a.type), conditions: weather.description, temp: weather.temp, suggestedTasks: taskSuggestions },
             };
             await store.saveInsight(ins);
-            const text = formatInsight(ins, m.lang);
-            if (text) {
-              await store.send({ at: nowIso, toId: m.id, lang: m.lang, kind: 'info', text });
-              sent.push({ kind: 'insight_weather_alert', toId: m.id, text });
-            }
           }
+        } else {
+          weather = undefined; // alerts already handled this hour → no second round of proposals
         }
       }
-      await store.event({ at: nowIso, taskId: 'system', actor: 'agent', type: 'info' as any, details: { kind: 'weather_check' } });
+      await store.event({ at: nowIso, taskId: 'system', actor: 'agent', type: 'info', details: { kind: 'weather_check' } });
     } catch (err) {
       console.error('Weather check failed:', err);
+      weather = undefined;
     }
+  }
+
+  // ── Closing the loop: conflicts → checkpoint → action → verification → report ──
+  try {
+    const auto = await runAutonomy(store, nowIso, { weather });
+    sent.push(...auto);
+    // weather alert with nothing the agent could do itself → at least tell the admins
+    if (weather && !auto.some(a => a.kind === 'autonomous_weather_chore' || a.kind === 'weather_conflict')) {
+      const alerts = analyzeWeatherAlerts(weather);
+      for (const m of members.filter(m => m.isAdmin)) {
+        for (const a of alerts) {
+          const text = `${a.type === 'storm' ? '⛈️' : a.type === 'extreme_heat' ? '🔥' : a.type === 'cold_snap' ? '🥶' : '🌧️'} ${m.lang === 'ru' ? a.taskSuggestion.ru : a.taskSuggestion.en}`;
+          await store.send({ at: nowIso, toId: m.id, lang: m.lang, kind: 'info', text });
+          sent.push({ kind: 'insight_weather_alert', toId: m.id, text });
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Autonomy run failed:', err);
   }
 
   // ── Pillar 4: Generate proactive insights ──

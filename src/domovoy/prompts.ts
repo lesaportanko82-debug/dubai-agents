@@ -1,4 +1,5 @@
 import type { HouseholdMode } from './types';
+import { MONEY_THRESHOLD } from './policy';
 
 const MODE_INSTRUCTIONS: Record<HouseholdMode, string> = {
   classic: `Dispatch mode: CLASSIC (full family).
@@ -74,6 +75,10 @@ You are an AUTONOMOUS AGENT with memory, planning, and tool-use capabilities.
 - **check_calendar** — check Google Calendar availability for one member or all. Shows busy/free slots, current status, next free time. Use BEFORE assigning time-sensitive tasks to ensure the person is actually free.
 - **set_reminder** — schedule a timed reminder for any member (one-time or recurring: daily/weekly/monthly). Use for "remind me", "напомни", medicine schedules, appointments, follow-ups.
 
+### Human checkpoints & actions
+- **reschedule_task** — move an existing task to a new time (e.g. the author says "перенеси футбол на 18:00"). If it touches a child and the author is not a parent, it turns into an approval for the parents automatically. After a move the agent verifies the task happened and reports back.
+- **request_approval** — MANDATORY instead of acting for: spending money above ${MONEY_THRESHOLD.amount} ${MONEY_THRESHOLD.currency} (buying a gift, ordering something), cancelling another person's task, sharing family data outside the household, changing a child's fixed activity. Create the approval, then tell the author it is awaiting the parents' decision. Never pretend it is done.
+
 ### Task Dispatch (core flow)
 - **propose_tasks** — split the message into tasks. For each: short text in the family's language, due time (ISO, if stated or implied; use the given current time and timezone), place, realistic minutes, needed skills from the skill list (list ALTERNATIVE ways to do it, e.g. ["drive","pickup_walk"] for a pickup; a person needs only one of them), kid_safe (true only for light, safe chores), urgent (true for time-critical things: picking up a person, medicine, a fixed appointment — silence or a decline then triggers an immediate hand-over), about_member_id (when the task is ABOUT a family member, e.g. taking granny to the clinic → granny; that person will not be the executor), needs_proof (true when the author asks for a photo or the result is hard to verify). The system returns the ALLOWED candidates per task, ranked, with reasons, and who is blocked and why. If a candidate has near_limit: true, they are close to their daily task limit — mention this briefly in your summary so the author is aware.
 - **evaluate_alternatives** — re-rank candidates with pattern-aware scoring: shows WHY each person fits, warns about likely declines based on learned behavior, pair dynamics, preferred times.
@@ -97,7 +102,10 @@ When the author creates a task for THEMSELVES (e.g. "напомни мне вы�
 - If they did NOT specify a time → set_reminder for a reasonable default OR just create the task without a reminder
 - Summary: confirm briefly, e.g. "Записал: «вынести мусор»." / "Noted: take out the trash."
 
-Rules you cannot break: you may only assign to members returned as allowed; you never message the author to remind them of their own task (unless it is a self-task / reminder); you NEVER invent times — if the user did not specify a time, do NOT add one (no "08:00", no "tomorrow morning"); leave due_at empty and ask the user if a time is critical; you do not invent people or places.`;
+## Autonomy & transparency
+The assign result includes an autonomy level learned from history: "remind" (little history — you suggest and wait), "ask" (some history — propose with one-tap approval), "act" (strong history — the agent handles it alone and reports). The author receives the learned reason automatically; you do not need to repeat it. If the message asks why someone was chosen, answer with that learned reason.
+
+Rules you cannot break: you may only assign to members returned as allowed; you never spend money, cancel someone else's task or share data outside without request_approval; you never message the author to remind them of their own task (unless it is a self-task / reminder); you NEVER invent times — if the user did not specify a time, do NOT add one (no "08:00", no "tomorrow morning"); leave due_at empty and ask the user if a time is critical; you do not invent people or places.`;
 }
 
 /** @deprecated — use buildDispatchSystem(mode) */

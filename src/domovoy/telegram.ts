@@ -15,7 +15,11 @@ import { markDone, respond, tick, weeklyReport } from './household';
 import type { DomovoyStore } from './store';
 import type { Lang, Member, OutgoingMessage, Task } from './types';
 import { transcribeVoice } from './integrations';
-import { analyzePhoto } from './integrations';
+import { analyzePhoto, demoWeather, type DemoWeatherKind } from './integrations';
+import { decideApproval } from './approvals';
+import { runAutonomy } from './autonomy';
+import { impactMetrics, formatImpact } from './metrics';
+import { learningReport, formatLearning } from './learning';
 
 // ---------- Telegram shapes (only what we use) ----------
 export interface TgUser { id: number; first_name?: string; language_code?: string }
@@ -63,10 +67,12 @@ const T = {
   noModel: { ru: 'На сервере не настроен ключ модели — распределять новые дела пока не могу.', en: 'No model key is configured on the server — I cannot dispatch new tasks yet.', tl: 'Walang model key sa server.' },
   myTasks: { ru: 'Ваши дела:', en: 'Your tasks:', tl: 'Mga gawain mo:' },
   help: {
-    ru: 'Я понимаю обычные ответы: «ок», «не могу», «могу через 2 часа», «готово», фото как подтверждение.\nКоманды: /tasks — мои дела, /report — итоги недели, /panel — веб-панель, /switch — выбрать другого члена семьи (для теста).',
-    en: 'I understand plain replies: “ok”, “can’t”, “can in 2 hours”, “done”, a photo as proof.\nCommands: /tasks — my tasks, /report — weekly summary, /panel — web panel, /switch — pick another member (for testing).',
+    ru: 'Я понимаю обычные ответы: «ок», «не могу», «могу через 2 часа», «готово», фото как подтверждение.\nКоманды: /tasks — мои дела, /report — итоги недели, /impact — что я сделал и сколько времени сэкономил, /learned — чему научился, /approvals — что ждёт вашего решения, /connect — подключить Google Calendar, /panel — веб-панель, /switch — выбрать другого члена семьи (для теста).',
+    en: 'I understand plain replies: “ok”, “can’t”, “can in 2 hours”, “done”, a photo as proof.\nCommands: /tasks — my tasks, /report — weekly summary, /impact — what I did and the time saved, /learned — what I have learned, /approvals — decisions waiting for you, /connect — Google Calendar, /panel — web panel, /switch — pick another member (for testing).',
     tl: 'Naiintindihan ko: “ok”, “hindi ko kaya”, “tapos na”, larawan bilang patunay.\nCommands: /tasks, /report, /panel, /switch.',
   },
+  btnApprove: { ru: 'да, делай ✅', en: 'yes, do it ✅', tl: 'oo, gawin ✅' }, btnReject: { ru: 'нет, оставь', en: 'no, leave it', tl: 'hindi, hayaan' },
+  btnUndo: { ru: '↩️ отменить', en: '↩️ undo', tl: '↩️ bawiin' }, btnNotDone: { ru: 'не сделано', en: 'not done', tl: 'hindi pa' },
   btnOk: { ru: 'ок ✅', en: 'ok ✅', tl: 'ok ✅' }, btnNo: { ru: 'не могу', en: "can't", tl: 'hindi ko kaya' }, btnLater: { ru: 'могу через 2 ч', en: 'can in 2 h', tl: 'mamaya (2 h)' }, btnDone: { ru: 'готово 🎉', en: 'done 🎉', tl: 'tapos na 🎉' },
 } as const;
 const t = <K extends keyof typeof T>(k: K, l: Lang) => (T[k] as any)[ui(l)] as (typeof T)[K]['en'];
@@ -126,8 +132,14 @@ function waitingTask(tasks: Task[], memberId: string, statuses: Task['status'][]
 }
 
 function keyboardFor(msg: OutgoingMessage, m: Member, task?: Task): Button[][] | undefined {
-  if (!msg.taskId) return undefined;
   const l = m.lang;
+  // human checkpoint: approve / reject
+  if (msg.kind === 'approval' && msg.approvalId) return [[{ text: t('btnApprove', l), data: `ap:${msg.approvalId}` }, { text: t('btnReject', l), data: `rj:${msg.approvalId}` }]];
+  if (!msg.taskId) return undefined;
+  // the agent acted on its own → one-tap undo
+  if (msg.kind === 'autonomous') return [[{ text: t('btnUndo', l), data: `ux:${msg.taskId}` }]];
+  // closing the loop: did it happen?
+  if (msg.kind === 'verification') return [[{ text: t('btnDone', l), data: `f:${msg.taskId}` }, { text: t('btnNotDone', l), data: `nd:${msg.taskId}` }]];
   if (msg.kind === 'assignment' || msg.kind === 'request') {
     // Self-task: author assigned to themselves → no confirmation needed, only "done" button
     if (task && task.authorId === task.assigneeId) {
@@ -199,10 +211,38 @@ export async function handleUpdate(store: DomovoyStore, upd: TgUpdate, deps: Tel
     }
     const me = byChat(members, chatId);
     if (!me) { await send.answerCallback(cq.id); await askWho(); return; }
+    if (op === 'ap' || op === 'rj') {
+      try {
+        const r = await decideApproval(store, arg, me.id, op === 'ap' ? 'approve' : 'reject', now);
+        await send.answerCallback(cq.id, op === 'ap' ? '✅' : '↩️');
+        if (cq.message && r.outcome !== 'not_allowed') await send.clearKeyboard(chatId, cq.message.message_id);
+        await send.sendMessage(chatId, me.lang === 'ru' ? r.note.ru : r.note.en);
+      } catch (e: any) { await send.answerCallback(cq.id, '⌛'); await send.sendMessage(chatId, `⚠️ ${e?.message ?? String(e)}`); }
+      await flush();
+      return;
+    }
     const tasks = await store.tasks();
     const task = tasks.find(x => x.id === arg);
     try {
-      if (op === 'a' && task) { await respond(store, task.id, me.id, 'accept', now); await send.answerCallback(cq.id, '✅'); await send.sendMessage(chatId, (t('accepted', me.lang) as any)(task.text)); }
+      if (op === 'ux' && task) {
+        // undo an autonomous action: only the author or an admin, only while nothing has been done
+        if (!(me.isAdmin || me.id === task.authorId)) { await send.answerCallback(cq.id, '🔒'); }
+        else if (task.status === 'done') { await send.answerCallback(cq.id, me.lang === 'ru' ? 'Уже сделано' : 'Already done'); }
+        else {
+          task.status = 'cancelled'; await store.saveTask(task);
+          await store.event({ at: now, taskId: task.id, actor: me.id, type: 'blocked', details: { reason: 'undo autonomous action' } });
+          const assignee = members.find(x => x.id === task.assigneeId);
+          if (assignee && assignee.id !== me.id) await store.send({ at: now, toId: assignee.id, lang: assignee.lang, kind: 'info', taskId: task.id, text: assignee.lang === 'ru' ? `❌ Отбой: «${task.text}» не нужно.` : `❌ Never mind: "${task.text}" is not needed.` });
+          await send.answerCallback(cq.id, '↩️');
+          await send.sendMessage(chatId, me.lang === 'ru' ? `Отменил: «${task.text}». Запомню, что это было лишним.` : `Undone: "${task.text}". I will remember this was unnecessary.`);
+        }
+      }
+      else if (op === 'nd' && task) {
+        const r = await respond(store, task.id, me.id, 'decline', now);
+        await send.answerCallback(cq.id);
+        await send.sendMessage(chatId, (t('declined', me.lang) as any)(task.text, nameOf(members, r.swappedTo)));
+      }
+      else if (op === 'a' && task) { await respond(store, task.id, me.id, 'accept', now); await send.answerCallback(cq.id, '✅'); await send.sendMessage(chatId, (t('accepted', me.lang) as any)(task.text)); }
       else if (op === 'd' && task) { const r = await respond(store, task.id, me.id, 'decline', now); await send.answerCallback(cq.id); await send.sendMessage(chatId, (t('declined', me.lang) as any)(task.text, nameOf(members, r.swappedTo))); }
       else if (op === 'l' && task) { const r = await respond(store, task.id, me.id, 'decline', now, { proposeAt: new Date(Date.parse(now) + 2 * 3_600_000).toISOString() }); await send.answerCallback(cq.id); if (!r.rescheduled) await send.sendMessage(chatId, (t('declined', me.lang) as any)(task.text, nameOf(members, r.swappedTo))); }
       else if (op === 'f' && task) { const r = await markDone(store, task.id, me.id, now); await send.answerCallback(cq.id); if (!r.needProof) await send.sendMessage(chatId, (t('done', me.lang) as any)(task.text)); }
@@ -265,6 +305,37 @@ export async function handleUpdate(store: DomovoyStore, upd: TgUpdate, deps: Tel
   if (/^\/tasks/.test(text)) {
     const mine = (await store.tasks()).filter(x => x.assigneeId === me.id && ['assigned', 'accepted'].includes(x.status));
     await send.sendMessage(chatId, mine.length ? `${t('myTasks', me.lang)}\n` + mine.map(x => `• ${x.text}${x.dueAt ? ' — ' + fmtTime(x.dueAt, tz) : ''} (${x.status === 'assigned' ? '?' : '✓'})`).join('\n') : (t('noTask', me.lang) as string));
+    return;
+  }
+  if (/^\/impact/.test(text)) {
+    const m = await impactMetrics(store, now, 7);
+    await send.sendMessage(chatId, formatImpact(m, me.lang));
+    return;
+  }
+  if (/^\/learned/.test(text)) {
+    const rep = await learningReport(store, me.lang);
+    await send.sendMessage(chatId, formatLearning(rep, me.lang));
+    return;
+  }
+  if (/^\/approvals/.test(text)) {
+    const pending = (await store.approvals({ status: 'pending' })).filter(a => a.approverIds.includes(me.id));
+    if (!pending.length) { await send.sendMessage(chatId, me.lang === 'ru' ? 'Решений, которые ждут вас, нет.' : 'No decisions are waiting for you.'); return; }
+    for (const a of pending) {
+      await send.sendMessage(chatId, (me.lang === 'ru' ? `🛡️ ${a.reason.ru}` : `🛡️ ${a.reason.en}`) + `\n⌛ ${fmtTime(a.expiresAt, tz)}`,
+        [[{ text: t('btnApprove', me.lang), data: `ap:${a.id}` }, { text: t('btnReject', me.lang), data: `rj:${a.id}` }]]);
+    }
+    return;
+  }
+  // /demo rain|heat|storm — admin-only: run the autonomous scenarios against synthetic weather (for the showcase)
+  const demoMatch = text.match(/^\/demo(?:\s+(rain|heat|storm|dry))?/i);
+  if (demoMatch) {
+    if (!me.isAdmin) { await send.sendMessage(chatId, me.lang === 'ru' ? 'Только для администраторов.' : 'Admins only.'); return; }
+    const kind = (demoMatch[1]?.toLowerCase() ?? 'rain') as DemoWeatherKind;
+    const sentNow = await runAutonomy(store, now, { weather: demoWeather(kind, now), force: true });
+    await flush();
+    await send.sendMessage(chatId, me.lang === 'ru'
+      ? `🎬 Демо «${kind}»: агент выполнил ${sentNow.length} действ${sentNow.length === 1 ? 'ие' : sentNow.length < 5 ? 'ия' : 'ий'}: ${Array.from(new Set(sentNow.map(x => x.kind))).join(', ') || '—'}`
+      : `🎬 Demo "${kind}": the agent took ${sentNow.length} action${sentNow.length === 1 ? '' : 's'}: ${Array.from(new Set(sentNow.map(x => x.kind))).join(', ') || '—'}`);
     return;
   }
   if (/^\/report/.test(text)) {

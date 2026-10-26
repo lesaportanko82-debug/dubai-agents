@@ -60,13 +60,26 @@ export interface Task {
   rescheduledFrom?: string;
   /** private: visible only to author, assignee, and admins (auto-set for aboutMemberId tasks) */
   private?: boolean;
+  /** where the task came from: a person's message, or the agent acting on its own */
+  origin?: 'user' | 'weather' | 'prediction' | 'approval' | 'followup';
+  /** the agent created / rescheduled this task itself and owns the follow-up (verification + report) */
+  agentManaged?: boolean;
+  /** when to check whether the task really happened (closing the loop) */
+  verifyAt?: string;
+  /** verification question already sent */
+  verifyAsked?: boolean;
+  /** how autonomously the agent acted on this task and why (visible learning) */
+  decision?: AutonomyDecision;
+  /** an approval that this task is waiting for / was created by */
+  approvalId?: string;
 }
 
 export interface TaskEvent {
   at: string;
   taskId: string;
   actor: string;                // member id | 'agent'
-  type: 'created' | 'assigned' | 'accepted' | 'declined' | 'swapped' | 'reminded' | 'done' | 'message' | 'blocked' | 'rescheduled' | 'timeout' | 'proof_requested' | 'auto_replaced';
+  type: 'created' | 'assigned' | 'accepted' | 'declined' | 'swapped' | 'reminded' | 'done' | 'message' | 'blocked' | 'rescheduled' | 'timeout' | 'proof_requested' | 'auto_replaced'
+    | 'approval_requested' | 'approval_decided' | 'autonomous_action' | 'verification_asked' | 'verified' | 'loop_closed' | 'info';
   details?: Record<string, unknown>;
 }
 
@@ -104,8 +117,10 @@ export interface OutgoingMessage {
   toId: string;
   lang: Lang;
   text: string;
-  kind: 'assignment' | 'request' | 'reminder' | 'swap' | 'report' | 'info';
+  kind: 'assignment' | 'request' | 'reminder' | 'swap' | 'report' | 'info' | 'approval' | 'verification' | 'autonomous';
   taskId?: string;
+  /** set for kind = 'approval': the approval the buttons decide */
+  approvalId?: string;
 }
 
 export interface DispatchRun {
@@ -180,7 +195,8 @@ export interface Reminder {
 
 export type InsightType =
   | 'morning_briefing' | 'rebalance_suggestion' | 'conflict_warning' | 'pattern_prediction'
-  | 'streak_alert' | 'idle_member' | 'overload_warning' | 'weekly_digest' | 'weather_alert';
+  | 'streak_alert' | 'idle_member' | 'overload_warning' | 'weekly_digest' | 'weather_alert'
+  | 'weather_conflict' | 'recurring_prediction' | 'loop_closed';
 
 export interface Insight {
   id?: number;
@@ -190,4 +206,48 @@ export interface Insight {
   data: Record<string, unknown>;
   delivered: boolean;
   createdAt: string;
+}
+
+// ── Closing the loop: approvals, autonomy, impact ──
+
+/** Actions the agent may take only with a human checkpoint (or reports after taking, when low-risk). */
+export type ApprovalAction =
+  | 'reschedule_task'        // move a task / event to a new time
+  | 'create_task'            // create + assign a task the agent proposed (weather, prediction)
+  | 'cancel_task'
+  | 'spend_money'            // any purchase above the household threshold
+  | 'change_child_schedule'  // anything that moves a child's fixed activity
+  | 'share_outside';         // sending household data to someone outside the family
+
+export type ApprovalStatus = 'pending' | 'approved' | 'rejected' | 'expired' | 'executed' | 'failed';
+
+export interface Approval {
+  id: string;
+  householdId: string;
+  action: ApprovalAction;
+  /** member id, or 'agent' when the agent itself asks */
+  requestedBy: string;
+  /** who may decide */
+  approverIds: string[];
+  payload: Record<string, unknown>;
+  reason: { ru: string; en: string };
+  /** what happens if the approver rejects (optional fallback the agent executes instead) */
+  fallback?: { ru: string; en: string };
+  status: ApprovalStatus;
+  createdAt: string;
+  expiresAt: string;
+  decidedAt?: string;
+  decidedBy?: string;
+  result?: Record<string, unknown>;
+}
+
+/** How much the agent is allowed to do on its own for a given kind of task. */
+export type AutonomyLevel = 'remind' | 'ask' | 'act';
+
+export interface AutonomyDecision {
+  level: AutonomyLevel;
+  confidence: number;           // 0..1
+  why: { ru: string; en: string };
+  /** which learned patterns drove the decision */
+  evidence: string[];
 }

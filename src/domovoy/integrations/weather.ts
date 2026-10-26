@@ -40,30 +40,62 @@ export interface WeatherAlert {
   kidSafe: boolean;
 }
 
-const DEMO_WEATHER: WeatherData = {
-  temp: 34, feelsLike: 38, humidity: 55, description: 'Partly cloudy',
-  icon: '02d', windSpeed: 4.2, rainMm: 0,
-  forecast: [
-    { dt: '', temp: 32, description: 'Light rain', icon: '10d', rainMm: 2.5, windSpeed: 6.1 },
-    { dt: '', temp: 30, description: 'Moderate rain', icon: '10d', rainMm: 8.0, windSpeed: 7.3 },
-    { dt: '', temp: 28, description: 'Cloudy', icon: '04d', rainMm: 0, windSpeed: 3.5 },
-    { dt: '', temp: 33, description: 'Sunny', icon: '01d', rainMm: 0, windSpeed: 2.0 },
-  ],
+export type DemoWeatherKind = 'dry' | 'rain' | 'heat' | 'storm';
+
+const DEMO_WEATHER: Record<DemoWeatherKind, WeatherData> = {
+  dry: {
+    temp: 31, feelsLike: 33, humidity: 48, description: 'Clear sky', icon: '01d', windSpeed: 3.1, rainMm: 0,
+    forecast: [
+      { dt: '', temp: 32, description: 'Clear sky', icon: '01d', rainMm: 0, windSpeed: 3.0 },
+      { dt: '', temp: 31, description: 'Clear sky', icon: '01d', rainMm: 0, windSpeed: 2.8 },
+      { dt: '', temp: 29, description: 'Few clouds', icon: '02n', rainMm: 0, windSpeed: 2.2 },
+      { dt: '', temp: 28, description: 'Clear sky', icon: '01n', rainMm: 0, windSpeed: 2.0 },
+    ],
+  },
+  rain: {
+    temp: 34, feelsLike: 38, humidity: 55, description: 'Partly cloudy', icon: '02d', windSpeed: 4.2, rainMm: 0,
+    forecast: [
+      { dt: '', temp: 32, description: 'Light rain', icon: '10d', rainMm: 2.5, windSpeed: 6.1 },
+      { dt: '', temp: 30, description: 'Moderate rain', icon: '10d', rainMm: 8.0, windSpeed: 7.3 },
+      { dt: '', temp: 28, description: 'Cloudy', icon: '04d', rainMm: 0, windSpeed: 3.5 },
+      { dt: '', temp: 33, description: 'Sunny', icon: '01d', rainMm: 0, windSpeed: 2.0 },
+    ],
+  },
+  heat: {
+    temp: 41, feelsLike: 46, humidity: 30, description: 'Sunny', icon: '01d', windSpeed: 2.0, rainMm: 0,
+    forecast: [
+      { dt: '', temp: 43, description: 'Sunny', icon: '01d', rainMm: 0, windSpeed: 2.0 },
+      { dt: '', temp: 42, description: 'Sunny', icon: '01d', rainMm: 0, windSpeed: 2.4 },
+      { dt: '', temp: 38, description: 'Clear', icon: '01n', rainMm: 0, windSpeed: 2.1 },
+      { dt: '', temp: 35, description: 'Clear', icon: '01n', rainMm: 0, windSpeed: 1.8 },
+    ],
+  },
+  storm: {
+    temp: 29, feelsLike: 30, humidity: 70, description: 'Overcast', icon: '04d', windSpeed: 9.0, rainMm: 0,
+    forecast: [
+      { dt: '', temp: 27, description: 'Thunderstorm', icon: '11d', rainMm: 12, windSpeed: 17.5 },
+      { dt: '', temp: 26, description: 'Heavy rain', icon: '10d', rainMm: 9, windSpeed: 12.0 },
+      { dt: '', temp: 27, description: 'Cloudy', icon: '04d', rainMm: 0, windSpeed: 5.0 },
+      { dt: '', temp: 28, description: 'Cloudy', icon: '04d', rainMm: 0, windSpeed: 3.0 },
+    ],
+  },
 };
 
+/** Synthetic weather anchored to `nowIso` (3-hour slots). Used without an API key and by the demo command. */
+export function demoWeather(kind: DemoWeatherKind = 'dry', nowIso = new Date().toISOString()): WeatherData {
+  const base = DEMO_WEATHER[kind];
+  const now = new Date(nowIso).getTime();
+  return { ...base, forecast: base.forecast.map((f, i) => ({ ...f, dt: new Date(now + (i + 1) * 3 * 3_600_000).toISOString() })) };
+}
+
 /** Fetch current weather + 12h forecast for a city/coordinates. */
-export async function getWeather(opts: { lat?: number; lon?: number; city?: string }): Promise<WeatherData> {
+export async function getWeather(opts: { lat?: number; lon?: number; city?: string; nowIso?: string }): Promise<WeatherData> {
   const key = process.env.OPENWEATHER_API_KEY;
   if (!key) {
-    // Demo mode: return realistic Dubai weather with rain in forecast
-    const now = new Date();
-    return {
-      ...DEMO_WEATHER,
-      forecast: DEMO_WEATHER.forecast.map((f, i) => ({
-        ...f,
-        dt: new Date(now.getTime() + (i + 1) * 3 * 3_600_000).toISOString(),
-      })),
-    };
+    // Demo mode without a key: dry by default, so the agent never invents chores for real families.
+    // DOMOVOY_DEMO_WEATHER=rain|heat|storm switches the showcase scenario on.
+    const kind = (process.env.DOMOVOY_DEMO_WEATHER as DemoWeatherKind | undefined) ?? 'dry';
+    return demoWeather(DEMO_WEATHER[kind] ? kind : 'dry', opts.nowIso);
   }
 
   const q = opts.lat && opts.lon
