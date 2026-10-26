@@ -5,7 +5,8 @@
 import type { DomovoyStore } from './store';
 import type { Member } from './types';
 import { demoWeather, type DemoWeatherKind } from './integrations';
-import { runAutonomy } from './autonomy';
+import { runAutonomy, isOutdoor } from './autonomy';
+import { randomUUID } from 'node:crypto';
 import { editWallet, placeOrder } from './payments';
 import { prepareCart } from './shopping';
 import { rememberFact } from './profile';
@@ -18,6 +19,22 @@ async function ensureAddress(store: DomovoyStore, me: Member, nowIso: string) {
   if (w.deliveryAddress) return;
   await editWallet(store, 'address', DEMO_ADDRESS, me.lang);
   try { await rememberFact(store, me, { key: 'home', value: DEMO_ADDRESS, kind: 'place', access: 'family' }, nowIso); } catch { /* exists */ }
+}
+
+/** The rain showcase needs an outdoor plan inside the rain window: a child's football 4 h from now, driven by a parent. */
+async function ensureOutdoorPlan(store: DomovoyStore, me: Member, nowIso: string) {
+  const [tasks, members] = await Promise.all([store.tasks(), store.members()]);
+  const horizon = new Date(new Date(nowIso).getTime() + 12 * 3_600_000).toISOString();
+  if (tasks.some(t => ['new', 'assigned', 'accepted'].includes(t.status) && t.dueAt && t.dueAt > nowIso && t.dueAt < horizon && isOutdoor(t))) return;
+  const child = members.find(m => m.role === 'child');
+  const driver = members.find(m => m.isAdmin && m.id !== me.id && m.skills.includes('drive')) ?? members.find(m => m.skills.includes('drive')) ?? me;
+  const dueAt = new Date(new Date(nowIso).getTime() + 4 * 3_600_000).toISOString();
+  const text = me.lang === 'ru' ? `Отвезти ${child?.name ?? 'ребёнка'} на футбол` : `Take ${child?.name ?? 'the kid'} to football`;
+  await store.saveTask({
+    id: 't-' + randomUUID().slice(0, 8), authorId: me.id, text, dueAt, minutes: 50, skills: ['drive'], kidSafe: false,
+    candidateIds: [driver.id], declinedBy: [], status: 'accepted', assigneeId: driver.id, assignedAt: nowIso, reminderLevel: 0, createdAt: nowIso,
+    aboutMemberId: child?.id, assignReason: 'demo: outdoor plan for the weather scenario',
+  });
 }
 
 /** Run one showcase scenario as `me` (an admin). Returns a short human line. */
@@ -49,6 +66,7 @@ export async function runDemo(store: DomovoyStore, me: Member, kind: DemoKind, n
       en: `🎬 Carrefour cart: ${r.cart.lines.length} items ≈ ${r.cart.estimatedTotal} ${r.cart.currency}, sent to the payer. Press "paid" to watch the agent follow the delivery.`,
     };
   }
+  if (kind === 'rain' || kind === 'storm') await ensureOutdoorPlan(store, me, nowIso);
   const sent = await runAutonomy(store, nowIso, { weather: demoWeather(kind, nowIso), force: true });
   const kinds = Array.from(new Set(sent.map(x => x.kind))).join(', ') || '—';
   return {
