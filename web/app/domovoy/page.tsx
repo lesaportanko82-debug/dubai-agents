@@ -51,6 +51,7 @@ export default async function DomovoyHome() {
             <span className="text-[13px] text-stone-500">
               {ru ? `${members.length} человек в семье` : `${members.length} family members`}
             </span>
+            <a href="/api/domovoy/logout" className="text-[13px] text-stone-500 underline hover:text-stone-700">{ru ? 'выйти' : 'log out'}</a>
           </div>
         </div>
       )}
