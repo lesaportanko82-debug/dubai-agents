@@ -413,6 +413,16 @@ export class DomovoyDb {
     fail('setSession', error);
   }
 
+  /** Wipe everything a household produced (tasks, log, outbox, approvals, payments, carts, profile, learning). Members and settings stay. Used to reset the demo family. */
+  async wipeHousehold(householdId: string) {
+    for (const table of ['dm_tasks', 'dm_events', 'dm_outbox', 'dm_approvals', 'dm_payments', 'dm_carts', 'dm_profile', 'dm_insights', 'dm_patterns', 'dm_reminders', 'dm_agent_plans', 'dm_runs', 'dm_goals']) {
+      const { error } = await this.sb.from(table).delete().eq('household_id', householdId);
+      fail('wipe ' + table, error);
+    }
+    const { error } = await this.sb.from('dm_households').update({ wallet: null }).eq('id', householdId);
+    fail('wipe wallet', error);
+  }
+
   /** true if this update was already processed */
   async seen(updateId: number): Promise<boolean> {
     const { error } = await this.sb.from('dm_tg_updates').insert({ update_id: updateId });

@@ -6,7 +6,7 @@ import { PageTitle, Panel, Pill } from '@/components/ui';
 import { Avatar, memberColor } from '@/components/domovoy/Member';
 import { hhmm } from '@core/domovoy/household';
 import { reasonText } from '@/lib/reasons';
-import { demoAction } from './loop-actions';
+import { demoAction, resetDemoAction } from './loop-actions';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,6 +65,9 @@ export default async function DomovoyHome() {
             <button name="kind" value="cart" className="rounded-md border border-stone-300 bg-paper px-3 py-1 hover:border-stone-400">🛒 {ru ? 'корзина в магазине' : 'shop cart'}</button>
           </form>
           <span className="text-mute">{ru ? 'Результат — в «Решениях», «Кошельке» и «Как решал агент».' : 'See the result in Decisions, Wallet and Agent decisions.'}</span>
+          {ctx.isDemo && ctx.household && (
+            <form action={resetDemoAction} className="ml-auto"><button className="text-mute underline hover:text-ink">{ru ? 'сбросить демо-семью' : 'reset the demo family'}</button></form>
+          )}
         </div>
       )}
 

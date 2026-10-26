@@ -98,6 +98,16 @@ declare global {
   var __domovoyDemoHousehold: Household | undefined;
 }
 
+/** Reset the demo family to its seeded state (jury-proof: every showcase can be replayed). */
+export async function resetDemoHousehold(db: DomovoyDb): Promise<void> {
+  const h = await ensureDemoHousehold(db);
+  await db.wipeHousehold(h.id);
+  h.wallet = undefined;
+  const store = db.store(h);
+  const members = await store.members();
+  await seed(store, members.some(m => m.id.startsWith('demo_')) ? 'demo_' : '');
+}
+
 /**
  * Resolve the panel context: a valid dm_token cookie → that household (which may be the demo one);
  * Supabase without a session → demo household read-only context, not authenticated (layout redirects);

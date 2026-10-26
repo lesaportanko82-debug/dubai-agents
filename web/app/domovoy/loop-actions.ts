@@ -1,6 +1,6 @@
 'use server';
 import { revalidatePath } from 'next/cache';
-import { panelContext, demoNow } from '@/lib/domovoy-server';
+import { panelContext, demoNow, getDomovoyDb, resetDemoHousehold, DEMO_HOUSEHOLD_NAME } from '@/lib/domovoy-server';
 import { decideApproval } from '@core/domovoy/approvals';
 import { refundPayment, editWallet } from '@core/domovoy/payments';
 import { cartCancel, cartPaid } from '@core/domovoy/shopping';
@@ -85,5 +85,13 @@ export async function demoAction(formData: FormData) {
   if (!['rain', 'heat', 'storm', 'pay', 'cart'].includes(kind)) return;
   try { await runDemo(store, me, kind, demoNow()); } catch { /* shown in the log */ }
   await flush(store);
+  revalidatePath('/domovoy', 'layout');
+}
+
+export async function resetDemoAction() {
+  const ctx = await panelContext();
+  const db = getDomovoyDb();
+  if (!db || !ctx.household || ctx.household.name !== DEMO_HOUSEHOLD_NAME) return;
+  await resetDemoHousehold(db);
   revalidatePath('/domovoy', 'layout');
 }

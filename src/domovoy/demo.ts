@@ -24,8 +24,10 @@ async function ensureAddress(store: DomovoyStore, me: Member, nowIso: string) {
 /** The rain showcase needs an outdoor plan inside the rain window: a child's football 4 h from now, driven by a parent. */
 async function ensureOutdoorPlan(store: DomovoyStore, me: Member, nowIso: string) {
   const [tasks, members] = await Promise.all([store.tasks(), store.members()]);
-  const horizon = new Date(new Date(nowIso).getTime() + 12 * 3_600_000).toISOString();
-  if (tasks.some(t => ['new', 'assigned', 'accepted'].includes(t.status) && t.dueAt && t.dueAt > nowIso && t.dueAt < horizon && isOutdoor(t))) return;
+  // the synthetic rain falls in the +3h…+9h slots; a plan counts only if it lands inside them
+  const from = new Date(new Date(nowIso).getTime() + 3 * 3_600_000).toISOString();
+  const to = new Date(new Date(nowIso).getTime() + 9 * 3_600_000).toISOString();
+  if (tasks.some(t => ['new', 'assigned', 'accepted'].includes(t.status) && t.dueAt && t.dueAt >= from && t.dueAt < to && isOutdoor(t))) return;
   const child = members.find(m => m.role === 'child');
   const driver = members.find(m => m.isAdmin && m.id !== me.id && m.skills.includes('drive')) ?? members.find(m => m.skills.includes('drive')) ?? me;
   const dueAt = new Date(new Date(nowIso).getTime() + 4 * 3_600_000).toISOString();
