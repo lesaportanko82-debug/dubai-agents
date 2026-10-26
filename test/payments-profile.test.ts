@@ -218,3 +218,19 @@ test('medical facts can never be stored family-wide, even if the caller asks', a
   const f = await rememberFact(store, by('mum'), { key: 'allergy:son', value: 'арахис', aboutMemberId: 'son', access: 'family' }, NOW);
   assert.equal(f.access, 'adults');
 });
+
+test('remember_fact through the agent refuses values the author did not say', async () => {
+  const { runDispatch } = await import('../src/domovoy/agent');
+  const store = mkStore();
+  const scripted = (calls: any[]) => { let i = 0; return { create: async () => i < calls.length ? { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'c' + i, name: calls[i].name, input: calls[i++].input }] } : { stop_reason: 'end_turn', content: [{ type: 'text', text: 'ok' }] } } as any; };
+  const client = scripted([
+    { name: 'remember_fact', input: { key: 'home', value: 'Апарт-36, улица Аль-Марина, Дубай', kind: 'place' } },   // invented
+    { name: 'remember_fact', input: { key: 'allergy:timur', value: 'арахис', about_member_id: 'son', access: 'family' } }, // name instead of id, access too wide
+  ]);
+  const r = await runDispatch(client, store, 'mum', 'Запомни: у Тимура аллергия на арахис', { now: NOW });
+  assert.match(JSON.stringify(r.trace[0].output), /Refused/);
+  const facts = await store.profile();
+  assert.equal(facts.length, 1);
+  assert.equal(facts[0].key, 'allergy:son');
+  assert.equal(facts[0].access, 'adults');
+});

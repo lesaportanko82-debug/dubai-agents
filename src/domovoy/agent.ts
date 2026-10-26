@@ -19,6 +19,10 @@ import { profileContext, rememberFact, visibleFacts, type FactAccess, type FactK
 import { MERCHANTS, prepareCart } from './shopping';
 import { decideAutonomy } from './learning';
 
+/** Cyrillic → Latin, enough to match "timur" against "Тимур". */
+const TR: Record<string, string> = { а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'kh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya' };
+const translit = (s: string) => s.split('').map(c => TR[c] ?? c).join('');
+
 /** Models sometimes send null for optional fields; zod wants them absent. */
 function stripNulls<T>(v: T): T {
   if (Array.isArray(v)) return v.map(stripNulls) as T;
@@ -247,7 +251,7 @@ export const DISPATCH_TOOLS: ToolDef[] = [
   },
   {
     name: 'remember_fact',
-    description: 'Store a fact the author just told you so nobody is asked twice: key like home, school:masha, shoe_size:son, allergy:son, quiet_hours; value as text. Medical keys default to adults-only access; facts about a person default to owner+parents. Only store what the author actually said.',
+    description: 'Store a fact the author just told you so nobody is asked twice: key like home, school:masha, shoe_size:son, allergy:son, quiet_hours (the part after ":" is the member ID from get_family, never a name); value as text copied from the author\'s words — the tool REFUSES values that are not in the message. Medical keys are adults-only; facts about a person default to owner+parents. Never invent a fact; if it is missing, ask.',
     input_schema: {
       type: 'object',
       properties: { key: { type: 'string' }, value: { type: 'string' }, kind: { type: 'string', enum: ['place', 'person', 'rule', 'recurring', 'other'] }, about_member_id: { type: 'string' }, access: { type: 'string', enum: ['family', 'adults', 'owner'] } },
@@ -529,6 +533,18 @@ export async function runDispatch(client: ModelClient, store: DomovoyStore, auth
     }
     if (name === 'remember_fact') {
       const r = RememberFactIn.parse(input);
+      // the fact must come from the author, not from the model: most of its words must appear in the message
+      const words = r.value.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(w => w.length > 2);
+      const msg = text.toLowerCase();
+      const found = words.filter(w => msg.includes(w)).length;
+      if (words.length && found / words.length < 0.6) throw new Error(`Refused: "${r.value}" is not in the author's message. Never invent facts — ask the author and store what they answer.`);
+      // key suffix after ':' must be a member id
+      const suffix = r.key.includes(':') ? r.key.split(':')[1].toLowerCase() : undefined;
+      if (suffix && !members.some(m => m.id.toLowerCase() === suffix)) {
+        const byName = members.find(m => { const n = translit(m.name.toLowerCase()); return n.startsWith(suffix) || suffix.startsWith(n.slice(0, 4)) || m.name.toLowerCase().startsWith(suffix); });
+        if (byName) r.key = r.key.split(':')[0] + ':' + byName.id; else throw new Error(`Unknown member "${suffix}" in key; use a member id: ${members.map(m => m.id).join(', ')}`);
+        if (!r.about_member_id) r.about_member_id = byName.id;
+      }
       const f = await rememberFact(store, author!, { key: r.key, value: redact(r.value).text, kind: r.kind as FactKind | undefined, aboutMemberId: r.about_member_id, access: r.access as FactAccess | undefined }, now);
       return { ok: true, key: f.key, access: f.access, note: 'Stored. Will not be asked again.' };
     }
