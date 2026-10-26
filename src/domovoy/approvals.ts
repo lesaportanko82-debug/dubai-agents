@@ -16,6 +16,7 @@ import type { Approval, ApprovalAction, Lang, Member, Task } from './types';
 import { rankCandidates } from './tools/assign';
 import { assignTask, buildContext, hhmm } from './household';
 import { chargeOverride } from './payments';
+import { fmtWhen } from './autonomy';
 
 export interface ApprovalRule {
   /** who decides: household admins, the task author, or either */
@@ -198,8 +199,8 @@ export async function executeAction(store: DomovoyStore, action: ApprovalAction,
     for (const id of targets) {
       const m = byId(id); if (!m) continue;
       await store.send({ at: nowIso, toId: m.id, lang: m.lang, kind: 'info', taskId: t.id,
-        text: say(m.lang, `📅 «${t.text}» перенесено${from ? ' с ' + hhmm(from, tz) : ''} на ${hhmm(newDueAt, tz)}. Я проверю, что всё прошло, и отчитаюсь.`,
-          `📅 "${t.text}" moved${from ? ' from ' + hhmm(from, tz) : ''} to ${hhmm(newDueAt, tz)}. I will check it happened and report back.`) });
+        text: say(m.lang, `📅 «${t.text}» перенесено${from ? ' с ' + fmtWhen(from, tz, nowIso, 'ru') : ''} на ${fmtWhen(newDueAt, tz, nowIso, 'ru')}. Я проверю, что всё прошло, и отчитаюсь.`,
+          `📅 "${t.text}" moved${from ? ' from ' + fmtWhen(from, tz, nowIso, 'en') : ''} to ${fmtWhen(newDueAt, tz, nowIso, 'en')}. I will check it happened and report back.`) });
     }
     return { taskId: t.id, from, to: newDueAt };
   }

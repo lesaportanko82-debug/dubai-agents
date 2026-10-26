@@ -26,6 +26,16 @@ const t2 = (x: string) => new Date(x).getTime();
 const plus = (iso: string, min: number) => new Date(t2(iso) + min * 60_000).toISOString();
 const DAY = 86_400_000;
 
+/** "20:02" today, "завтра 20:02" / "tomorrow 20:02", or "28.10 20:02" further out. */
+export function fmtWhen(iso: string, tz: string, nowIso: string, lang: 'ru' | 'en'): string {
+  const day = (x: string) => new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(x));
+  const d = day(iso), today = day(nowIso), tomorrow = day(new Date(t2(nowIso) + DAY).toISOString());
+  const time = hhmm(iso, tz);
+  if (d === today) return time;
+  if (d === tomorrow) return (lang === 'ru' ? 'завтра ' : 'tomorrow ') + time;
+  return `${d.slice(8, 10)}.${d.slice(5, 7)} ${time}`;
+}
+
 export type Sent = { kind: string; toId: string; text: string };
 
 export const OUTDOOR_RE = /прогул|парк|футбол|тренировк|площадк|велосипед|пикник|пляж|бассейн|самокат|балкон|бельё|белье|walk|park|football|soccer|training|practice|playground|bike|picnic|beach|pool|scooter|balcony|laundry/i;
@@ -93,11 +103,11 @@ export async function weatherConflicts(store: DomovoyStore, nowIso: string, weat
     }
 
     const child = touchesChild(t, members);
-    const who = exec ? exec.name : say('ru', 'пока без исполнителя', 'no executor yet');
+    const whoRu = exec ? exec.name : 'пока без исполнителя', whoEn = exec ? exec.name : 'no executor yet';
     const about = t.aboutMemberId ? members.find(m => m.id === t.aboutMemberId)?.name : undefined;
     const reason = {
-      ru: `🌧️ ${hhmm(w.from, tz)}–${hhmm(w.to, tz)} дождь (${w.mm} мм). ${about ? `У ${about}: ` : ''}«${t.text}» в ${hhmm(t.dueAt!, tz)} (${who}).\nПеренести на ${hhmm(newDueAt, tz)}?${freeNote.ru}`,
-      en: `🌧️ Rain ${hhmm(w.from, tz)}–${hhmm(w.to, tz)} (${w.mm} mm). ${about ? `${about}'s ` : ''}"${t.text}" is at ${hhmm(t.dueAt!, tz)} (${who}).\nMove it to ${hhmm(newDueAt, tz)}?${freeNote.en}`,
+      ru: `🌧️ ${hhmm(w.from, tz)}–${hhmm(w.to, tz)} дождь (${w.mm} мм). ${about ? `У ${about}: ` : ''}«${t.text}» в ${fmtWhen(t.dueAt!, tz, nowIso, 'ru')} (${whoRu}).\nПеренести на ${fmtWhen(newDueAt, tz, nowIso, 'ru')}?${freeNote.ru}`,
+      en: `🌧️ Rain ${hhmm(w.from, tz)}–${hhmm(w.to, tz)} (${w.mm} mm). ${about ? `${about}'s ` : ''}"${t.text}" is at ${fmtWhen(t.dueAt!, tz, nowIso, 'en')} (${whoEn}).\nMove it to ${fmtWhen(newDueAt, tz, nowIso, 'en')}?${freeNote.en}`,
     };
     const raincoat = {
       task: { text: say(store.lang, `Взять дождевик/зонт: ${t.text}`, `Take a raincoat/umbrella: ${t.text}`), minutes: 5, skills: [], kidSafe: true, dueAt: plus(t.dueAt!, -30) },
@@ -130,8 +140,8 @@ export async function weatherConflicts(store: DomovoyStore, nowIso: string, weat
       await requestApproval(store, {
         action: m.role === 'child' ? 'change_child_schedule' : 'reschedule_task',
         payload: { taskId: t.id, newDueAt: newFrom, busyKey: `${m.id}|${b.from}` },
-        reason: { ru: `🌧️ ${hhmm(w.from, tz)}–${hhmm(w.to, tz)} дождь (${w.mm} мм), а у ${m.name} «${b.what}» в ${hhmm(b.from, tz)}. Перенести на ${hhmm(newFrom, tz)}?`,
-          en: `🌧️ Rain ${hhmm(w.from, tz)}–${hhmm(w.to, tz)} (${w.mm} mm) and ${m.name} has "${b.what}" at ${hhmm(b.from, tz)}. Move it to ${hhmm(newFrom, tz)}?` },
+        reason: { ru: `🌧️ ${hhmm(w.from, tz)}–${hhmm(w.to, tz)} дождь (${w.mm} мм), а у ${m.name} «${b.what}» в ${fmtWhen(b.from, tz, nowIso, 'ru')}. Перенести на ${fmtWhen(newFrom, tz, nowIso, 'ru')}?`,
+          en: `🌧️ Rain ${hhmm(w.from, tz)}–${hhmm(w.to, tz)} (${w.mm} mm) and ${m.name} has "${b.what}" at ${fmtWhen(b.from, tz, nowIso, 'en')}. Move it to ${fmtWhen(newFrom, tz, nowIso, 'en')}?` },
         fallback: { ru: 'оставлю как есть и напомню взять дождевик.', en: 'I leave it and remind to take a raincoat.' },
         requestedBy: 'agent', authorId: t.authorId, taskId: t.id,
       }, nowIso);

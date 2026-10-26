@@ -29,7 +29,11 @@ export async function runDemo(store: DomovoyStore, me: Member, kind: DemoKind, n
     const small = Math.max(1, Math.round(w.perTxLimit / 6));
     const big = Math.round(w.perTxLimit * 3.3);
     const r1 = await placeOrder(store, { requestedBy: me.id, merchant: 'Carrefour', category: 'grocery', amount: small, items: me.lang === 'ru' ? 'Молоко 2 л, хлеб' : 'Milk 2 l, bread' }, nowIso);
-    const r2 = await placeOrder(store, { requestedBy: me.id, merchant: 'Carrefour', category: 'kids', amount: big, items: me.lang === 'ru' ? 'Детский велосипед' : 'Kids bike' }, nowIso);
+    const bikeText = me.lang === 'ru' ? 'Детский велосипед' : 'Kids bike';
+    const already = (await store.payments()).find(p => p.status === 'pending_approval' && p.items === bikeText);
+    const r2 = already
+      ? { outcome: 'pending_approval' as const, payment: already }
+      : await placeOrder(store, { requestedBy: me.id, merchant: 'Carrefour', category: 'kids', amount: big, items: bikeText }, nowIso);
     return {
       ru: `🎬 Оплата: «${r1.payment.items}» → ${r1.outcome} (${r1.payment.reason.ru}); «${r2.payment.items}» → ${r2.outcome} (${r2.payment.reason.ru}). Чек с кнопкой возврата — в кошельке, одобрение — в решениях.`,
       en: `🎬 Payment: "${r1.payment.items}" → ${r1.outcome} (${r1.payment.reason.en}); "${r2.payment.items}" → ${r2.outcome} (${r2.payment.reason.en}). Receipt with refund in the wallet, approval in decisions.`,

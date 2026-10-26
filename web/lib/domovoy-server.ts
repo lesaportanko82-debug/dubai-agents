@@ -86,8 +86,9 @@ export async function ensureDemoHousehold(db: DomovoyDb): Promise<Household> {
     if (!h) throw new Error('demo household unavailable');
   }
   const store = db.store(h);
-  if (!(await store.members()).length) for (const m of demoMembers()) await store.saveMember(m);
-  if (!(await store.tasks()).length) await seed(store, 'demo_');
+  let members = await store.members();
+  if (!members.length) { for (const m of demoMembers()) await store.saveMember(m); members = await store.members(); }
+  if (!(await store.tasks()).length) await seed(store, members.some(m => m.id.startsWith('demo_')) ? 'demo_' : '');
   globalThis.__domovoyDemoHousehold = h;
   return h;
 }
