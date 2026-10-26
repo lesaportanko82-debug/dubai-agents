@@ -35,7 +35,7 @@ function hourIn(iso: string, tz: string): number {
 }
 
 /** Rate limits: max tasks an author may create per hour. */
-const RATE_LIMIT: Record<string, number> = { child: 5, adult: 15, elder: 15, helper: 15 };
+const RATE_LIMIT: Record<string, number> = { child: 5, adult: 30, elder: 15, helper: 15 };
 
 const ProposeIn = z.object({
   tasks: z.array(z.object({
