@@ -41,6 +41,8 @@ export interface TgSender {
   sendMessage(chatId: string, text: string, keyboard?: Button[][]): Promise<void>;
   answerCallback(id: string, text?: string): Promise<void>;
   clearKeyboard(chatId: string, messageId: number): Promise<void>;
+  /** Replace the buttons of an already sent message (multi-select pickers). */
+  editKeyboard?(chatId: string, messageId: number, keyboard: Button[][]): Promise<void>;
 }
 
 export interface TelegramDeps {
@@ -613,5 +615,6 @@ export function telegramSender(token: string): TgSender {
     },
     async answerCallback(id, text) { await api('answerCallbackQuery', { callback_query_id: id, text }); },
     async clearKeyboard(chatId, messageId) { await api('editMessageReplyMarkup', { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: [] } }); },
+    async editKeyboard(chatId, messageId, keyboard) { await api('editMessageReplyMarkup', { chat_id: chatId, message_id: messageId, reply_markup: { inline_keyboard: keyboard.map(r => r.map(b => b.url ? { text: b.text, url: b.url } : { text: b.text, callback_data: b.data })) } }); },
   };
 }

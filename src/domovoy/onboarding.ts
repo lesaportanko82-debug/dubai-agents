@@ -249,9 +249,10 @@ export async function handleOnboarding(upd: TgUpdate, deps: OnboardingDeps): Pro
       if (idx >= 0) selected.splice(idx, 1); else selected.push(skill);
       session.state.selectedSkills = selected;
       await db.setSession(chatId, session);
-      await sendSkillPicker(send, chatId, l, session.state.role as Role, undefined, selected);
+      await sendSkillPicker(send, chatId, l, session.state.role as Role, undefined, selected, upd.callback_query?.message?.message_id);
       return true;
     }
+    if (upd.callback_query?.message) await send.clearKeyboard(chatId, upd.callback_query.message.message_id);
     // Create the household + admin member
     const h = await db.createHousehold({
       name: session.state.householdName as string,
@@ -316,6 +317,7 @@ export async function handleOnboarding(upd: TgUpdate, deps: OnboardingDeps): Pro
     if (upd.callback_query) await send.answerCallback(upd.callback_query.id);
     const selected = (session.state.selectedSkills as string[]) ?? [];
     if (skill === 'done') {
+      if (upd.callback_query?.message) await send.clearKeyboard(chatId, upd.callback_query.message.message_id);
       // Finalize member creation
       const h = await db.household(session.householdId!);
       if (!h) return true;
@@ -352,7 +354,7 @@ export async function handleOnboarding(upd: TgUpdate, deps: OnboardingDeps): Pro
     if (idx >= 0) selected.splice(idx, 1); else selected.push(skill);
     session.state.selectedSkills = selected;
     await db.setSession(chatId, session);
-    await sendSkillPicker(send, chatId, l, session.state.role as Role, session.state.age as number | undefined, selected);
+    await sendSkillPicker(send, chatId, l, session.state.role as Role, session.state.age as number | undefined, selected, upd.callback_query?.message?.message_id);
     return true;
   }
 
@@ -361,7 +363,7 @@ export async function handleOnboarding(upd: TgUpdate, deps: OnboardingDeps): Pro
   return true;
 }
 
-async function sendSkillPicker(send: TgSender, chatId: string, l: L, role: Role, age: number | undefined, selected: string[]) {
+async function sendSkillPicker(send: TgSender, chatId: string, l: L, role: Role, age: number | undefined, selected: string[], messageId?: number) {
   const available = skillsForRole(role, age);
   const buttons: Button[][] = [];
   for (let i = 0; i < available.length; i += 2) {
@@ -371,5 +373,6 @@ async function sendSkillPicker(send: TgSender, chatId: string, l: L, role: Role,
     })));
   }
   buttons.push([{ text: TX.done[l], data: 'skill:done' }]);
+  if (messageId && send.editKeyboard) { await send.editKeyboard(chatId, messageId, buttons); return; }
   await send.sendMessage(chatId, TX.askSkills[l], buttons);
 }
