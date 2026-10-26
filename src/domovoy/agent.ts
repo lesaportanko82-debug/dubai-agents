@@ -19,6 +19,13 @@ import { profileContext, rememberFact, visibleFacts, type FactAccess, type FactK
 import { MERCHANTS, prepareCart } from './shopping';
 import { decideAutonomy } from './learning';
 
+/** Models sometimes send null for optional fields; zod wants them absent. */
+function stripNulls<T>(v: T): T {
+  if (Array.isArray(v)) return v.map(stripNulls) as T;
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v as Record<string, unknown>).filter(([, x]) => x !== null).map(([k, x]) => [k, stripNulls(x)])) as T;
+  return v;
+}
+
 function hourIn(iso: string, tz: string): number {
   return parseInt(new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', hour12: false }).format(new Date(iso)));
 }
@@ -249,7 +256,7 @@ export const DISPATCH_TOOLS: ToolDef[] = [
   },
   {
     name: 'reschedule_task',
-    description: 'Move an existing task to a new time. If the task touches a child (child executor, or the task is about a child) and the author is not a parent, this automatically becomes an approval request to the parents instead of a direct change. Returns what happened.',
+    description: 'Move an EXISTING open task (an id from get_family.open_tasks) to a new time. If there is no such task, say so and ask what exactly to move — never invent a task or ask someone to "arrange" the move. If the task touches a child (child executor, or the task is about a child) and the author is not a parent, this automatically becomes an approval request to the parents instead of a direct change. Returns what happened.',
     input_schema: {
       type: 'object',
       properties: { task_id: { type: 'string' }, new_due_at: { type: 'string', description: 'ISO 8601 with offset' }, reason: { type: 'string', description: 'One line: why move it' } },
@@ -258,7 +265,7 @@ export const DISPATCH_TOOLS: ToolDef[] = [
   },
   {
     name: 'request_approval',
-    description: `Human checkpoint. MUST be used instead of acting when the request involves: spending money (spend_money — pass amount + currency as written; the system converts to the family currency and asks the parents only above the family threshold, otherwise records it), cancelling someone else's task (cancel_task), sending family data to someone outside the household (share_outside), or changing a child's fixed activity (change_child_schedule). Creates a pending decision for the right people (parents/admins) with approve/reject buttons and returns its id. Do not promise the outcome — say it is awaiting approval.`,
+    description: `Human checkpoint. NOT for shop orders (prepare_cart / place_order route money themselves — never combine them with this). Use for: money that is not a shop order — pocket money, paying a tutor, a fee, a transfer (spend_money — pass amount + currency as written; converted to the family currency, parents asked only above the threshold, otherwise just recorded); cancelling someone else's task (cancel_task), sending family data to someone outside the household (share_outside), or changing a child's fixed activity (change_child_schedule). Creates a pending decision for the right people (parents/admins) with approve/reject buttons and returns its id. Do not promise the outcome — say it is awaiting approval.`,
     input_schema: {
       type: 'object',
       properties: {
@@ -317,11 +324,14 @@ export async function runDispatch(client: ModelClient, store: DomovoyStore, auth
   }
   return { summary: 'Stopped: step limit reached.', tasks: created, trace, redactions: removed };
 
-  async function exec(name: string, input: unknown): Promise<unknown> {
+  async function exec(name: string, rawInput: unknown): Promise<unknown> {
+    const input = stripNulls(rawInput);
     if (name === 'get_family') {
       const ctx = await buildContext(store, now, tz);
+      const open = (await store.tasks()).filter(t => ['new', 'assigned', 'accepted', 'unassigned'].includes(t.status)).slice(-30);
       return {
         timezone: tz,
+        open_tasks: open.map(t => ({ id: t.id, text: t.text, due_at: t.dueAt, assignee_id: t.assigneeId, about_member_id: t.aboutMemberId, status: t.status })),
         members: members.map(m => ({ id: m.id, name: m.name, role: m.role, age: m.age, lang: m.lang, skills: m.skills, message_style: m.messageStyle, work_hours: m.workHours, day_off: m.dayOff, week_minutes: ctx.weekMinutes[m.id], open_today: ctx.openToday[m.id], busy: m.busy.map(b => `${b.from}–${b.to} ${b.what ?? ''}`.trim()) })),
         skills: Object.keys(KID_SKILLS),
       };

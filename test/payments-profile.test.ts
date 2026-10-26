@@ -212,3 +212,9 @@ test('cart: wallet-enabled merchant → "pay from the wallet" goes through the p
   assert.equal(r.outcome?.outcome, 'pending_approval');
   assert.equal((await store.carts()).find(c => c.id === big.cart.id)!.status, 'sent', 'cart stays open until the parents decide');
 });
+
+test('medical facts can never be stored family-wide, even if the caller asks', async () => {
+  const store = mkStore();
+  const f = await rememberFact(store, by('mum'), { key: 'allergy:son', value: 'арахис', aboutMemberId: 'son', access: 'family' }, NOW);
+  assert.equal(f.access, 'adults');
+});

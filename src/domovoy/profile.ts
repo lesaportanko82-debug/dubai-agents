@@ -89,7 +89,8 @@ export interface RememberInput { key: string; value: string; kind?: FactKind; ab
 export async function rememberFact(store: DomovoyStore, by: Member | 'agent', input: RememberInput, nowIso: string): Promise<ProfileFact> {
   const key = normKey(input.key);
   if (!isValidKey(key)) throw new Error('bad key: use letters, digits, _ and one ":" (e.g. school:masha)');
-  const access = input.access ?? defaultAccess(key, input.aboutMemberId);
+  let access = input.access ?? defaultAccess(key, input.aboutMemberId);
+  if (SENSITIVE_KEY_RE.test(key) && access === 'family') access = 'adults';   // medical facts are never family-wide, whatever the caller asked
   if (by !== 'agent' && !canWrite(key, input.aboutMemberId, access, by)) throw new Error(`${by.name} may not set ${key}`);
   const existing = (await store.profile()).find(f => f.key === key);
   const f: ProfileFact = {
