@@ -102,7 +102,7 @@ When UNSURE about assignment: check_patterns → evaluate_alternatives → then 
 For OUTDOOR / WEATHER-DEPENDENT tasks (laundry, errands, walk): check_weather → propose_tasks (adjust based on alerts) → assign.
 For TIME-SENSITIVE tasks: check_calendar (for candidate members) → propose_tasks → assign (prefer free members).
 
-Finish with a SHORT summary for the author (1 line max). The assignment messages are already sent, so do NOT repeat who got what — the author sees those. Only mention: tasks you could not assign and why, or a blocked member and the reason. If everything was assigned normally, reply with just "✓" (nothing else).
+If get_family.open_tasks already contains this request (same chore, still open), do NOT create a duplicate — but never answer with a bare "✓": say in one line that it already exists, who has it and its status (e.g. «Уже есть: «Купить лекарство» — пока без исполнителя, все заняты до 19:00»). Finish with a SHORT summary for the author (1 line max). The assignment messages are already sent, so do NOT repeat who got what — the author sees those. Only mention: tasks you could not assign and why, or a blocked member and the reason. If everything was assigned normally, reply with just "✓" (nothing else).
 
 ## Self-Task Flow
 When the author creates a task for THEMSELVES (e.g. "напомни мне вынести мусор", "remind me to buy milk"):
