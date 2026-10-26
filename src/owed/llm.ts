@@ -30,9 +30,9 @@ export function openAiClient(apiKey = process.env.OPENAI_API_KEY, baseUrl = 'htt
         messages: toOpenAiMessages(req.system, req.messages as any[]),
       };
       if (req.tools.length) body.tools = req.tools.map(toOpenAiTool);
-      // reasoning models (gpt-5*, o*) default to medium effort, which makes a 5-tool dispatch take 40-70 s;
-      // low effort keeps the same tool choices for this kind of routing and fits the serverless budget
-      if (/^(gpt-5|o\d)/.test(req.model)) body.reasoning_effort = process.env.OPENAI_REASONING_EFFORT ?? 'low';
+      // reasoning effort is tunable per deployment; low is faster but drops tasks and skips required fields,
+      // medium keeps the dispatch reliable (OPENAI_REASONING_EFFORT overrides)
+      if (/^(gpt-5|o\d)/.test(req.model)) body.reasoning_effort = process.env.OPENAI_REASONING_EFFORT ?? 'medium';
 
       const res = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
