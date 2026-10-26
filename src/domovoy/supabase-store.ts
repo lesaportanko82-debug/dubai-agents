@@ -15,6 +15,8 @@ import type { DomovoyStore } from './store';
 import type { AgentPlan, Approval, DispatchRun, Goal, Household, Insight, Lang, Member, MessageStyle, OutgoingMessage, Pattern, Reminder, Task, TaskEvent } from './types';
 import type { HouseholdMode } from './types';
 import { DEFAULT_THRESHOLD, defaultCurrency, type Currency } from './policy';
+import { defaultWallet, type Payment, type WalletPolicy } from './payments';
+import { seal, unseal, SENSITIVE_KEY_RE, type ProfileFact } from './profile';
 
 type Row = Record<string, any>;
 
@@ -35,7 +37,7 @@ const memberToRow = (householdId: string, m: Member): Row => ({
   availability: m.availability ?? [],
   calendar_id: m.calendarId ?? null,
 });
-const householdFromRow = (r: Row): Household => ({ id: r.id, name: r.name, tz: r.tz, lang: r.lang, inviteCode: r.invite_code, pin: r.pin ?? '', mode: (r.mode as HouseholdMode) ?? 'classic', currency: r.currency ?? undefined, moneyThreshold: r.money_threshold ?? undefined });
+const householdFromRow = (r: Row): Household => ({ id: r.id, name: r.name, tz: r.tz, lang: r.lang, inviteCode: r.invite_code, pin: r.pin ?? '', mode: (r.mode as HouseholdMode) ?? 'classic', currency: r.currency ?? undefined, moneyThreshold: r.money_threshold ?? undefined, wallet: r.wallet ?? undefined });
 
 const goalFromRow = (r: Row): Goal => ({
   id: r.id, householdId: r.household_id, title: r.title, targetMemberId: r.target_member_id,
@@ -143,10 +145,10 @@ export class SupabaseDomovoyStore implements DomovoyStore {
   }
 
   async send(m: OutgoingMessage) {
-    const { error } = await this.sb.from('dm_outbox').insert({ household_id: this.householdId, at: m.at, to_member: m.toId, lang: m.lang, text: m.text, kind: m.kind, task_id: m.taskId ?? null, approval_id: m.approvalId ?? null });
+    const { error } = await this.sb.from('dm_outbox').insert({ household_id: this.householdId, at: m.at, to_member: m.toId, lang: m.lang, text: m.text, kind: m.kind, task_id: m.taskId ?? null, approval_id: m.approvalId ?? null, payment_id: m.paymentId ?? null });
     fail('send', error);
   }
-  private msgFromRow = (r: Row): OutgoingMessage => ({ id: r.id, at: r.at, toId: r.to_member, lang: r.lang, text: r.text, kind: r.kind, taskId: r.task_id ?? undefined, approvalId: r.approval_id ?? undefined });
+  private msgFromRow = (r: Row): OutgoingMessage => ({ id: r.id, at: r.at, toId: r.to_member, lang: r.lang, text: r.text, kind: r.kind, taskId: r.task_id ?? undefined, approvalId: r.approval_id ?? undefined, paymentId: r.payment_id ?? undefined });
   async outbox() {
     const { data, error } = await this.sb.from('dm_outbox').select('*').eq('household_id', this.householdId).order('id', { ascending: false }).limit(200);
     fail('outbox', error);
@@ -280,6 +282,59 @@ export class SupabaseDomovoyStore implements DomovoyStore {
       decided_at: a.decidedAt ?? null, decided_by: a.decidedBy ?? null, result: a.result ?? null,
     });
     fail('saveApproval', error);
+  }
+
+  // ── Payments with rules — dm_households.wallet + dm_payments ──
+  private _wallet?: WalletPolicy;
+  async wallet() {
+    if (!this._wallet) this._wallet = (this.household.wallet as WalletPolicy | undefined) ?? defaultWallet(this.currency);
+    return this._wallet;
+  }
+  async saveWallet(w: WalletPolicy) {
+    const { error } = await this.sb.from('dm_households').update({ wallet: w }).eq('id', this.householdId);
+    fail('saveWallet', error);
+    this._wallet = w; this.household.wallet = w;
+  }
+  async payments() {
+    const { data, error } = await this.sb.from('dm_payments').select('*').eq('household_id', this.householdId).order('created_at', { ascending: false }).limit(500);
+    fail('payments', error);
+    return (data ?? []).map((r: Row): Payment => ({
+      id: r.id, householdId: r.household_id, requestedBy: r.requested_by, merchant: r.merchant, category: r.category, items: r.items,
+      amount: Number(r.amount), currency: r.currency, amountInWallet: Number(r.amount_in_wallet), status: r.status, reason: r.reason, rule: r.rule ?? undefined,
+      providerRef: r.provider_ref ?? undefined, receiptUrl: r.receipt_url ?? undefined, approvalId: r.approval_id ?? undefined, overrideBy: r.override_by ?? undefined,
+      createdAt: r.created_at, paidAt: r.paid_at ?? undefined, refundedAt: r.refunded_at ?? undefined, taskId: r.task_id ?? undefined,
+    }));
+  }
+  async savePayment(p: Payment) {
+    const { error } = await this.sb.from('dm_payments').upsert({
+      id: p.id, household_id: this.householdId, requested_by: p.requestedBy, merchant: p.merchant, category: p.category, items: p.items,
+      amount: p.amount, currency: p.currency, amount_in_wallet: p.amountInWallet, status: p.status, reason: p.reason, rule: p.rule ?? null,
+      provider_ref: p.providerRef ?? null, receipt_url: p.receiptUrl ?? null, approval_id: p.approvalId ?? null, override_by: p.overrideBy ?? null,
+      created_at: p.createdAt, paid_at: p.paidAt ?? null, refunded_at: p.refundedAt ?? null, task_id: p.taskId ?? null,
+    });
+    fail('savePayment', error);
+  }
+
+  // ── Household profile — dm_profile (sensitive values sealed at rest) ──
+  async profile() {
+    const { data, error } = await this.sb.from('dm_profile').select('*').eq('household_id', this.householdId).order('key');
+    fail('profile', error);
+    return (data ?? []).map((r: Row): ProfileFact => ({
+      householdId: r.household_id, key: r.key, kind: r.kind, value: unseal(r.value, r.sealed), aboutMemberId: r.about_member_id ?? undefined,
+      access: r.access, source: r.source, createdBy: r.created_by, createdAt: r.created_at, updatedAt: r.updated_at, sealed: r.sealed,
+    }));
+  }
+  async saveFact(f: ProfileFact) {
+    const stored = SENSITIVE_KEY_RE.test(f.key) ? seal(f.value) : { value: f.value, sealed: false };
+    const { error } = await this.sb.from('dm_profile').upsert({
+      household_id: this.householdId, key: f.key, kind: f.kind, value: stored.value, sealed: stored.sealed, about_member_id: f.aboutMemberId ?? null,
+      access: f.access, source: f.source, created_by: f.createdBy, created_at: f.createdAt, updated_at: f.updatedAt,
+    }, { onConflict: 'household_id,key' });
+    fail('saveFact', error);
+  }
+  async deleteFact(key: string) {
+    const { error } = await this.sb.from('dm_profile').delete().eq('household_id', this.householdId).eq('key', key);
+    fail('deleteFact', error);
   }
 }
 

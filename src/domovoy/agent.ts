@@ -14,6 +14,8 @@ import { getWeather, analyzeWeatherAlerts, formatWeatherForAgent } from './integ
 import { checkCalendar, checkFamilyCalendars } from './integrations';
 import { executeAction, requestApproval, touchesChild } from './approvals';
 import { CURRENCIES, formatMoney, needsMoneyApproval, parseCurrency } from './policy';
+import { PAYMENT_CATEGORIES, placeOrder, type PaymentCategory } from './payments';
+import { profileContext, rememberFact, visibleFacts, type FactAccess, type FactKind } from './profile';
 import { decideAutonomy } from './learning';
 
 function hourIn(iso: string, tz: string): number {
@@ -73,6 +75,22 @@ const RescheduleIn = z.object({
   task_id: z.string(),
   new_due_at: z.string(),
   reason: z.string().min(3).max(200),
+});
+const PlaceOrderIn = z.object({
+  merchant: z.string().min(2).max(80),
+  category: z.enum(PAYMENT_CATEGORIES as [PaymentCategory, ...PaymentCategory[]]),
+  amount: z.number().positive(),
+  currency: z.string().optional(),
+  items: z.string().min(2).max(200),
+  task_id: z.string().optional(),
+});
+const GetProfileIn = z.object({ kind: z.enum(['place', 'person', 'rule', 'recurring', 'other']).optional(), about_member_id: z.string().optional() });
+const RememberFactIn = z.object({
+  key: z.string().min(2).max(60),
+  value: z.string().min(1).max(400),
+  kind: z.enum(['place', 'person', 'rule', 'recurring', 'other']).optional(),
+  about_member_id: z.string().optional(),
+  access: z.enum(['family', 'adults', 'owner']).optional(),
 });
 const RequestApprovalIn = z.object({
   action: z.enum(['spend_money', 'cancel_task', 'share_outside', 'change_child_schedule', 'reschedule_task']),
@@ -182,6 +200,34 @@ export const DISPATCH_TOOLS: ToolDef[] = [
     },
   },
   {
+    name: 'place_order',
+    description: 'Order and PAY for something on the family card, inside the wallet rules (per-purchase limit, monthly cap, allowed categories, known merchants, what children may order). Use for "закажи / купи онлайн / order / buy": pass merchant, category, amount and currency as written, items. Within the rules → paid, receipt sent, refund button. Outside → the card declines and the parents get an approval; a blocked category is refused outright. If it returns need_address, ask the author for the delivery address once and store it with remember_fact(key="home").',
+    input_schema: {
+      type: 'object',
+      properties: {
+        merchant: { type: 'string', description: 'Shop or service, e.g. Carrefour, Noon, Talabat' },
+        category: { type: 'string', enum: PAYMENT_CATEGORIES },
+        amount: { type: 'number' }, currency: { type: 'string', description: 'As written: AED, USD, дирхам, тенге, $…' },
+        items: { type: 'string', description: 'What exactly' }, task_id: { type: 'string' },
+      },
+      required: ['merchant', 'category', 'amount', 'items'],
+    },
+  },
+  {
+    name: 'get_profile',
+    description: 'Household profile facts the AUTHOR is allowed to see: places (home, school:masha…), facts about people (shoe_size:son, allergy:son — medical facts only here, never in the system prompt), rules, recurring needs. Call before ordering food/medicine (allergies), buying clothes (sizes), or sending someone somewhere (addresses).',
+    input_schema: { type: 'object', properties: { kind: { type: 'string', enum: ['place', 'person', 'rule', 'recurring', 'other'] }, about_member_id: { type: 'string' } } },
+  },
+  {
+    name: 'remember_fact',
+    description: 'Store a fact the author just told you so nobody is asked twice: key like home, school:masha, shoe_size:son, allergy:son, quiet_hours; value as text. Medical keys default to adults-only access; facts about a person default to owner+parents. Only store what the author actually said.',
+    input_schema: {
+      type: 'object',
+      properties: { key: { type: 'string' }, value: { type: 'string' }, kind: { type: 'string', enum: ['place', 'person', 'rule', 'recurring', 'other'] }, about_member_id: { type: 'string' }, access: { type: 'string', enum: ['family', 'adults', 'owner'] } },
+      required: ['key', 'value'],
+    },
+  },
+  {
     name: 'reschedule_task',
     description: 'Move an existing task to a new time. If the task touches a child (child executor, or the task is about a child) and the author is not a parent, this automatically becomes an approval request to the parents instead of a direct change. Returns what happened.',
     input_schema: {
@@ -228,8 +274,8 @@ export async function runDispatch(client: ModelClient, store: DomovoyStore, auth
   const trace: TraceStep[] = [];
   const created: Task[] = [];
 
-  // Build pattern context for the system prompt
-  const patternCtx = await patternContext(store);
+  // Build pattern + profile context for the system prompt (profile: only what this author may see, no medical)
+  const patternCtx = (await patternContext(store)) + (await profileContext(store, author));
 
   const messages: any[] = [{ role: 'user', content: `From: ${author.name} (role: ${author.role}, id: ${author.id}${author.age ? ', age: ' + author.age : ''}${author.isAdmin ? ', admin' : ''})\nNow: ${now} (${tz})\n\nMessage:\n${text}` }];
   for (let step = 0; step < (opts.maxSteps ?? 10); step++) {
@@ -428,6 +474,26 @@ export async function runDispatch(client: ModelClient, store: DomovoyStore, auth
           }), blocked });
       }
       return { tasks: out };
+    }
+    if (name === 'place_order') {
+      const o = PlaceOrderIn.parse(input);
+      const r = await placeOrder(store, { requestedBy: authorId, merchant: o.merchant, category: o.category, amount: o.amount, currency: o.currency, items: o.items, taskId: o.task_id }, now);
+      const p = r.payment;
+      return { outcome: r.outcome, payment_id: p.id, status: p.status, rule: p.rule, reason: p.reason.en, amount: formatMoney(p.amount, p.currency), in_wallet_currency: `${p.amountInWallet} ${store.currency}`, receipt: p.receiptUrl, provider_ref: p.providerRef,
+        note: r.outcome === 'paid' ? 'Paid. Receipt already sent to the author and admins; just confirm in one line.'
+          : r.outcome === 'pending_approval' ? 'Card declined by the family rules; parents got an approval. Tell the author it awaits the parents.'
+          : r.outcome === 'need_address' ? 'Ask the author for the delivery address (one line), then remember_fact(key="home") and call place_order again.'
+          : r.outcome === 'card_declined' ? 'The bank declined. Nothing charged. Tell the author.' : 'Refused by a hard rule. Tell the author why.' };
+    }
+    if (name === 'get_profile') {
+      const q = GetProfileIn.parse(input);
+      const facts = await visibleFacts(store, author!, { kind: q.kind as FactKind | undefined, aboutMemberId: q.about_member_id });
+      return { facts: facts.map(f => ({ key: f.key, value: f.value, kind: f.kind, about: f.aboutMemberId, access: f.access, source: f.source })), note: facts.length ? undefined : 'Nothing stored (or not visible to this person). Ask once, then remember_fact.' };
+    }
+    if (name === 'remember_fact') {
+      const r = RememberFactIn.parse(input);
+      const f = await rememberFact(store, author!, { key: r.key, value: redact(r.value).text, kind: r.kind as FactKind | undefined, aboutMemberId: r.about_member_id, access: r.access as FactAccess | undefined }, now);
+      return { ok: true, key: f.key, access: f.access, note: 'Stored. Will not be asked again.' };
     }
     if (name === 'reschedule_task') {
       const r = RescheduleIn.parse(input);

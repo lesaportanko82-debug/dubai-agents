@@ -1,4 +1,7 @@
 import type { Currency } from './policy';
+import type { Payment, WalletPolicy } from './payments';
+import type { ProfileFact } from './profile';
+import { defaultWallet } from './payments';
 import { DEFAULT_THRESHOLD, defaultCurrency } from './policy';
 import type { AgentPlan, Approval, DispatchRun, Goal, HouseholdMode, Lang, Insight, Member, OutgoingMessage, Pattern, Reminder, Task, TaskEvent } from './types';
 
@@ -48,6 +51,15 @@ export interface DomovoyStore {
   /** Human checkpoints: approvals the agent asked for */
   approvals(opts?: { status?: Approval['status']; limit?: number }): Promise<Approval[]>;
   saveApproval(a: Approval): Promise<void>;
+  /** Payments with rules */
+  wallet(): Promise<WalletPolicy>;
+  saveWallet(w: WalletPolicy): Promise<void>;
+  payments(): Promise<Payment[]>;
+  savePayment(p: Payment): Promise<void>;
+  /** Household profile (digital twin) */
+  profile(): Promise<ProfileFact[]>;
+  saveFact(f: ProfileFact): Promise<void>;
+  deleteFact(key: string): Promise<void>;
 }
 
 export class InMemoryDomovoyStore implements DomovoyStore {
@@ -67,6 +79,9 @@ export class InMemoryDomovoyStore implements DomovoyStore {
   private _reminders: Reminder[] = [];
   private _insights: Insight[] = [];
   private _approvals: Approval[] = [];
+  private _wallet?: WalletPolicy;
+  private _payments: Payment[] = [];
+  private _profile: ProfileFact[] = [];
   private _insightSeq = 0;
   private _patternSeq = 0;
   private _seq = 0;
@@ -151,4 +166,17 @@ export class InMemoryDomovoyStore implements DomovoyStore {
     const i = this._approvals.findIndex(x => x.id === a.id);
     if (i >= 0) this._approvals[i] = a; else this._approvals.unshift(a);
   }
+  async wallet() { return this._wallet ??= defaultWallet(this.currency); }
+  async saveWallet(w: WalletPolicy) { this._wallet = w; }
+  async payments() { return this._payments; }
+  async savePayment(p: Payment) {
+    const i = this._payments.findIndex(x => x.id === p.id);
+    if (i >= 0) this._payments[i] = p; else this._payments.push(p);
+  }
+  async profile() { return this._profile; }
+  async saveFact(f: ProfileFact) {
+    const i = this._profile.findIndex(x => x.key === f.key);
+    if (i >= 0) this._profile[i] = f; else this._profile.push(f);
+  }
+  async deleteFact(key: string) { this._profile = this._profile.filter(f => f.key !== key); }
 }

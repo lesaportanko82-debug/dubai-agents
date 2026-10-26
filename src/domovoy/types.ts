@@ -94,6 +94,8 @@ export interface Household {
   /** currency the family thinks in; sums above moneyThreshold need an admin */
   currency?: string;
   moneyThreshold?: number;
+  /** wallet policy JSON (see payments.ts) */
+  wallet?: unknown;
 }
 
 export type GoalType = 'streak' | 'total' | 'deadline';
@@ -120,10 +122,12 @@ export interface OutgoingMessage {
   toId: string;
   lang: Lang;
   text: string;
-  kind: 'assignment' | 'request' | 'reminder' | 'swap' | 'report' | 'info' | 'approval' | 'verification' | 'autonomous';
+  kind: 'assignment' | 'request' | 'reminder' | 'swap' | 'report' | 'info' | 'approval' | 'verification' | 'autonomous' | 'receipt';
   taskId?: string;
   /** set for kind = 'approval': the approval the buttons decide */
   approvalId?: string;
+  /** set for kind = 'receipt': the payment the refund button undoes */
+  paymentId?: string;
 }
 
 export interface DispatchRun {

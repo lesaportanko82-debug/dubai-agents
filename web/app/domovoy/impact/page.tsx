@@ -30,6 +30,7 @@ export default async function ImpactPage({ searchParams }: { searchParams: Promi
     { label: ru ? 'Агент сам' : 'Agent on its own', value: String(m.autonomousActions + m.swaps), sub: ru ? `${m.autonomousActions} действий · ${m.swaps} передач` : `${m.autonomousActions} actions · ${m.swaps} hand-overs` },
     { label: ru ? 'Доверие' : 'Trust', value: `${m.approvalRatePct}%`, sub: ru ? `одобрено ${m.approvalsApproved} из ${m.approvalsApproved + m.approvalsRejected} решений` : `${m.approvalsApproved} of ${m.approvalsApproved + m.approvalsRejected} decisions approved` },
     { label: ru ? 'Конфликтов предотвращено' : 'Conflicts prevented', value: String(m.conflictsPrevented), sub: ru ? `${m.loopsClosed} циклов закрыто с проверкой` : `${m.loopsClosed} loops closed with verification` },
+    { label: ru ? 'Платежи по правилам' : 'Payments within rules', value: `${m.payments.paid} / ${m.payments.stoppedByRules}`, sub: ru ? `оплачено / остановлено · ${m.payments.spent} ${m.payments.currency}` : `paid / stopped · ${m.payments.spent} ${m.payments.currency}` },
     { label: ru ? 'Сэкономлено организатору' : 'Organiser time saved', value: `${hours ? hours + (ru ? ' ч ' : ' h ') : ''}${mins} ${ru ? 'мин' : 'min'}`, sub: ru ? 'оценка, допущения ниже' : 'estimate, assumptions below' },
   ];
 
@@ -41,7 +42,7 @@ export default async function ImpactPage({ searchParams }: { searchParams: Promi
         right={<div className="flex gap-1 text-[13px]">{[7, 30, 90].map(d => <a key={d} href={`?days=${d}`} className={`px-2 py-1 rounded ${d === days ? 'bg-stone-900 text-white' : 'bg-stone-100'}`}>{d} {ru ? 'дн' : 'd'}</a>)}</div>}
       />
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-5">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
         {tiles.map(t => (
           <Panel key={t.label}><div className="px-5 py-4"><div className="text-[12px] uppercase tracking-wide text-mute">{t.label}</div><div className="num text-[30px] font-semibold leading-tight mt-1">{t.value}</div>{t.sub && <div className="text-[13px] text-mute mt-1">{t.sub}</div>}</div></Panel>
         ))}

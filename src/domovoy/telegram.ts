@@ -21,6 +21,8 @@ import { runAutonomy } from './autonomy';
 import { impactMetrics, formatImpact } from './metrics';
 import { learningReport, formatLearning } from './learning';
 import { CURRENCIES, DEFAULT_THRESHOLD, formatMoney, parseCurrency } from './policy';
+import { editWallet, formatWallet, placeOrder, refundPayment } from './payments';
+import { formatProfile, rememberFact, visibleFacts } from './profile';
 
 // ---------- Telegram shapes (only what we use) ----------
 export interface TgUser { id: number; first_name?: string; language_code?: string }
@@ -70,12 +72,12 @@ const T = {
   noModel: { ru: 'На сервере не настроен ключ модели — распределять новые дела пока не могу.', en: 'No model key is configured on the server — I cannot dispatch new tasks yet.', tl: 'Walang model key sa server.' },
   myTasks: { ru: 'Ваши дела:', en: 'Your tasks:', tl: 'Mga gawain mo:' },
   help: {
-    ru: 'Я понимаю обычные ответы: «ок», «не могу», «могу через 2 часа», «готово», фото как подтверждение.\nКоманды: /tasks — мои дела, /report — итоги недели, /impact — что я сделал и сколько времени сэкономил, /learned — чему научился, /currency — валюта и порог трат, /approvals — что ждёт вашего решения, /connect — подключить Google Calendar, /panel — веб-панель, /switch — выбрать другого члена семьи (для теста).',
-    en: 'I understand plain replies: “ok”, “can’t”, “can in 2 hours”, “done”, a photo as proof.\nCommands: /tasks — my tasks, /report — weekly summary, /impact — what I did and the time saved, /learned — what I have learned, /currency — currency and spending threshold, /approvals — decisions waiting for you, /connect — Google Calendar, /panel — web panel, /switch — pick another member (for testing).',
+    ru: 'Я понимаю обычные ответы: «ок», «не могу», «могу через 2 часа», «готово», фото как подтверждение.\nКоманды: /tasks — мои дела, /report — итоги недели, /impact — что я сделал и сколько времени сэкономил, /learned — чему научился, /currency — валюта и порог трат, /wallet — правила оплаты, /orders — заказы, /profile — профиль семьи, /approvals — что ждёт вашего решения, /connect — подключить Google Calendar, /panel — веб-панель, /switch — выбрать другого члена семьи (для теста).',
+    en: 'I understand plain replies: “ok”, “can’t”, “can in 2 hours”, “done”, a photo as proof.\nCommands: /tasks — my tasks, /report — weekly summary, /impact — what I did and the time saved, /learned — what I have learned, /currency — currency and spending threshold, /wallet — payment rules, /orders — orders, /profile — family profile, /approvals — decisions waiting for you, /connect — Google Calendar, /panel — web panel, /switch — pick another member (for testing).',
     tl: 'Naiintindihan ko: “ok”, “hindi ko kaya”, “tapos na”, larawan bilang patunay.\nCommands: /tasks, /report, /panel, /switch.',
   },
   btnApprove: { ru: 'да, делай ✅', en: 'yes, do it ✅', tl: 'oo, gawin ✅' }, btnReject: { ru: 'нет, оставь', en: 'no, leave it', tl: 'hindi, hayaan' },
-  btnUndo: { ru: '↩️ отменить', en: '↩️ undo', tl: '↩️ bawiin' }, btnNotDone: { ru: 'не сделано', en: 'not done', tl: 'hindi pa' },
+  btnUndo: { ru: '↩️ отменить', en: '↩️ undo', tl: '↩️ bawiin' }, btnRefund: { ru: '↩️ вернуть деньги', en: '↩️ refund', tl: '↩️ ibalik ang pera' }, btnNotDone: { ru: 'не сделано', en: 'not done', tl: 'hindi pa' },
   btnOk: { ru: 'ок ✅', en: 'ok ✅', tl: 'ok ✅' }, btnNo: { ru: 'не могу', en: "can't", tl: 'hindi ko kaya' }, btnLater: { ru: 'могу через 2 ч', en: 'can in 2 h', tl: 'mamaya (2 h)' }, btnDone: { ru: 'готово 🎉', en: 'done 🎉', tl: 'tapos na 🎉' },
 } as const;
 const t = <K extends keyof typeof T>(k: K, l: Lang) => (T[k] as any)[ui(l)] as (typeof T)[K]['en'];
@@ -138,6 +140,8 @@ function keyboardFor(msg: OutgoingMessage, m: Member, task?: Task): Button[][] |
   const l = m.lang;
   // human checkpoint: approve / reject
   if (msg.kind === 'approval' && msg.approvalId) return [[{ text: t('btnApprove', l), data: `ap:${msg.approvalId}` }, { text: t('btnReject', l), data: `rj:${msg.approvalId}` }]];
+  // a paid order → one-tap refund
+  if (msg.kind === 'receipt' && msg.paymentId) return [[{ text: t('btnRefund', l), data: `rf:${msg.paymentId}` }]];
   if (!msg.taskId) return undefined;
   // the agent acted on its own → one-tap undo
   if (msg.kind === 'autonomous') return [[{ text: t('btnUndo', l), data: `ux:${msg.taskId}` }]];
@@ -214,6 +218,16 @@ export async function handleUpdate(store: DomovoyStore, upd: TgUpdate, deps: Tel
     }
     const me = byChat(members, chatId);
     if (!me) { await send.answerCallback(cq.id); await askWho(); return; }
+    if (op === 'rf') {
+      try {
+        const r = await refundPayment(store, arg, me.id, now);
+        await send.answerCallback(cq.id, r.ok ? '↩️' : '🔒');
+        if (r.ok && cq.message) await send.clearKeyboard(chatId, cq.message.message_id);
+        await send.sendMessage(chatId, me.lang === 'ru' ? r.note.ru : r.note.en);
+      } catch (e: any) { await send.answerCallback(cq.id, '⌛'); await send.sendMessage(chatId, `⚠️ ${e?.message ?? String(e)}`); }
+      await flush();
+      return;
+    }
     if (op === 'ap' || op === 'rj') {
       try {
         const r = await decideApproval(store, arg, me.id, op === 'ap' ? 'approve' : 'reject', now);
@@ -329,6 +343,45 @@ export async function handleUpdate(store: DomovoyStore, upd: TgUpdate, deps: Tel
     }
     return;
   }
+  // /wallet [limit|monthly|allow|block|child|address <value>] — the family's payment rules
+  const walletMatch = text.match(/^\/wallet(?:\s+(limit|monthly|allow|block|child|address)\s+(.+))?/i);
+  if (walletMatch) {
+    if (walletMatch[1]) {
+      if (!me.isAdmin) { await send.sendMessage(chatId, me.lang === 'ru' ? 'Правила кошелька меняют только администраторы.' : 'Only admins change the wallet rules.'); return; }
+      const note = await editWallet(store, walletMatch[1].toLowerCase(), walletMatch[2], me.lang);
+      if (walletMatch[1].toLowerCase() === 'address') await rememberFact(store, me, { key: 'home', value: walletMatch[2], kind: 'place', access: 'family' }, now);
+      await send.sendMessage(chatId, note);
+      return;
+    }
+    await send.sendMessage(chatId, formatWallet(await store.wallet(), await store.payments(), now, me.lang));
+    return;
+  }
+  if (/^\/orders/.test(text)) {
+    const list = (await store.payments()).filter(p => me.isAdmin || p.requestedBy === me.id).slice(0, 10);
+    if (!list.length) { await send.sendMessage(chatId, me.lang === 'ru' ? 'Заказов пока не было.' : 'No orders yet.'); return; }
+    const icon: Record<string, string> = { paid: '✅', refunded: '↩️', declined: '🚫', failed: '❌', pending_approval: '⏳' };
+    await send.sendMessage(chatId, list.map(p => `${icon[p.status] ?? '•'} ${p.items} · ${p.merchant} · ${formatMoney(p.amount, p.currency)} · ${me.lang === 'ru' ? p.reason.ru : p.reason.en}`).join('\n'));
+    return;
+  }
+  // /profile [set <key> <value> | forget <key>]
+  const profMatch = text.match(/^\/profile(?:\s+(set|forget)\s+(\S+)(?:\s+([\s\S]+))?)?/i);
+  if (profMatch) {
+    try {
+      if (profMatch[1]?.toLowerCase() === 'set' && profMatch[3]) {
+        const key = profMatch[2];
+        const about = key.includes(':') ? members.find(m => m.id === key.split(':')[1])?.id : undefined;
+        const f = await rememberFact(store, me, { key, value: profMatch[3], aboutMemberId: about }, now);
+        await send.sendMessage(chatId, me.lang === 'ru' ? `✅ Запомнил ${f.key} (доступ: ${f.access}).` : `✅ Remembered ${f.key} (access: ${f.access}).`);
+      } else if (profMatch[1]?.toLowerCase() === 'forget') {
+        if (!me.isAdmin) { await send.sendMessage(chatId, me.lang === 'ru' ? 'Удалять факты могут администраторы.' : 'Admins delete facts.'); return; }
+        await store.deleteFact(profMatch[2].toLowerCase());
+        await send.sendMessage(chatId, me.lang === 'ru' ? `🗑 Забыл ${profMatch[2]}.` : `🗑 Forgot ${profMatch[2]}.`);
+      } else {
+        await send.sendMessage(chatId, formatProfile(await visibleFacts(store, me), members, me.lang));
+      }
+    } catch (e: any) { await send.sendMessage(chatId, `⚠️ ${e?.message ?? String(e)}`); }
+    return;
+  }
   // /currency [CODE [threshold]] — admin-only: the family's currency and the sum above which parents must approve
   const curMatch = text.match(/^\/currency(?:\s+(\S+))?(?:\s+(\d+))?/i);
   if (curMatch) {
@@ -348,9 +401,25 @@ export async function handleUpdate(store: DomovoyStore, upd: TgUpdate, deps: Tel
     return;
   }
   // /demo rain|heat|storm — admin-only: run the autonomous scenarios against synthetic weather (for the showcase)
-  const demoMatch = text.match(/^\/demo(?:\s+(rain|heat|storm|dry))?/i);
+  const demoMatch = text.match(/^\/demo(?:\s+(rain|heat|storm|dry|pay))?/i);
   if (demoMatch) {
     if (!me.isAdmin) { await send.sendMessage(chatId, me.lang === 'ru' ? 'Только для администраторов.' : 'Admins only.'); return; }
+    if (demoMatch[1]?.toLowerCase() === 'pay') {
+      // showcase: an order inside the rules is paid with a receipt + refund; a big one is declined by the card and goes to the parents
+      const w = await store.wallet();
+      if (!w.deliveryAddress) { await editWallet(store, 'address', 'Dubai Marina, Marina Gate 1, apt 1204', me.lang); await rememberFact(store, me, { key: 'home', value: 'Dubai Marina, Marina Gate 1, apt 1204', kind: 'place', access: 'family' }, now); }
+      const w2 = await store.wallet();
+      if (!w2.knownMerchants.some(m => m.name === 'Carrefour')) { w2.knownMerchants.push({ name: 'Carrefour', category: 'grocery' }); await store.saveWallet(w2); }
+      const small = Math.max(1, Math.round(w2.perTxLimit / 6));
+      const big = Math.round(w2.perTxLimit * 3.3);
+      const r1 = await placeOrder(store, { requestedBy: me.id, merchant: 'Carrefour', category: 'grocery', amount: small, items: me.lang === 'ru' ? 'Молоко 2 л, хлеб' : 'Milk 2 l, bread' }, now);
+      const r2 = await placeOrder(store, { requestedBy: me.id, merchant: 'Carrefour', category: 'kids', amount: big, items: me.lang === 'ru' ? 'Детский велосипед' : 'Kids bike' }, now);
+      await flush();
+      await send.sendMessage(chatId, me.lang === 'ru'
+        ? `🎬 Демо оплаты: «${r1.payment.items}» → ${r1.outcome} (${r1.payment.reason.ru}); «${r2.payment.items}» → ${r2.outcome} (${r2.payment.reason.ru}). Кнопка возврата под чеком, одобрение — у родителей.`
+        : `🎬 Payment demo: "${r1.payment.items}" → ${r1.outcome} (${r1.payment.reason.en}); "${r2.payment.items}" → ${r2.outcome} (${r2.payment.reason.en}). Refund button under the receipt, approval with the parents.`);
+      return;
+    }
     const kind = (demoMatch[1]?.toLowerCase() ?? 'rain') as DemoWeatherKind;
     const sentNow = await runAutonomy(store, now, { weather: demoWeather(kind, now), force: true });
     await flush();

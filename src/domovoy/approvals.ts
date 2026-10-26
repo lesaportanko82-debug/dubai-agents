@@ -15,6 +15,7 @@ import type { DomovoyStore } from './store';
 import type { Approval, ApprovalAction, Lang, Member, Task } from './types';
 import { rankCandidates } from './tools/assign';
 import { assignTask, buildContext, hhmm } from './household';
+import { chargeOverride } from './payments';
 
 export interface ApprovalRule {
   /** who decides: household admins, the task author, or either */
@@ -241,7 +242,11 @@ export async function executeAction(store: DomovoyStore, action: ApprovalAction,
   }
 
   if (action === 'spend_money') {
-    const { amount, currency, purpose, taskId } = payload as { amount: number; currency: string; purpose: string; taskId?: string };
+    const { amount, currency, purpose, taskId, paymentId } = payload as { amount: number; currency: string; purpose: string; taskId?: string; paymentId?: string };
+    if (paymentId && ctx.decidedBy) {
+      const r = await chargeOverride(store, paymentId, ctx.decidedBy, nowIso);
+      return { paymentId, outcome: r.outcome, providerRef: r.payment.providerRef };
+    }
     await store.event({ at: nowIso, taskId: taskId ?? 'budget', actor: ctx.decidedBy ?? 'agent', type: 'info', details: { kind: 'spend_approved', amount, currency, purpose, approvalId: ctx.approvalId } });
     return { approvedAmount: amount, currency, purpose };
   }

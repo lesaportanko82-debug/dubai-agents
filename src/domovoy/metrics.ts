@@ -8,6 +8,7 @@
 import type { DomovoyStore } from './store';
 import type { AutonomyLevel, Lang, Task } from './types';
 import { learningReport } from './learning';
+import { monthSpent } from './payments';
 
 /** Minutes of coordination a human organiser would otherwise spend. Stated openly, easy to argue with. */
 export const SAVINGS_ASSUMPTIONS = {
@@ -42,13 +43,15 @@ export interface ImpactMetrics {
   estimatedMinutesSaved: number;
   perMember: MemberImpact[];
   learning: { patterns: number; choresAct: number; choresAsk: number; choresRemind: number };
+  payments: { paid: number; refunded: number; stoppedByRules: number; cardDeclined: number; spent: number; monthSpent: number; currency: string };
   assumptions: typeof SAVINGS_ASSUMPTIONS;
 }
 
 const t2 = (x: string) => new Date(x).getTime();
 
 export async function impactMetrics(store: DomovoyStore, nowIso: string, periodDays = 7): Promise<ImpactMetrics> {
-  const [tasks, events, members, approvals, lr] = await Promise.all([store.tasks(), store.events(), store.members(), store.approvals(), learningReport(store, 'en')]);
+  const [tasks, events, members, approvals, lr, pays, wallet] = await Promise.all([store.tasks(), store.events(), store.members(), store.approvals(), learningReport(store, 'en'), store.payments(), store.wallet()]);
+  const paysIn = pays.filter(p => p.createdAt >= new Date(t2(nowIso) - periodDays * 86_400_000).toISOString() && p.createdAt <= nowIso);
   const from = new Date(t2(nowIso) - periodDays * 86_400_000).toISOString();
   const inPeriod = (iso?: string) => !!iso && iso >= from && iso <= nowIso;
   const ev = events.filter(e => inPeriod(e.at));
@@ -98,6 +101,12 @@ export async function impactMetrics(store: DomovoyStore, nowIso: string, periodD
     avgResponseMin: avgResponse, minutesCoordinated, estimatedMinutesSaved: saved,
     perMember,
     learning: { patterns: lr.patterns, choresAct: lr.rows.filter(r => r.level === 'act').length, choresAsk: lr.rows.filter(r => r.level === 'ask').length, choresRemind: lr.rows.filter(r => r.level === 'remind').length },
+    payments: {
+      paid: paysIn.filter(p => p.status === 'paid').length, refunded: paysIn.filter(p => p.status === 'refunded').length,
+      stoppedByRules: paysIn.filter(p => (p.status === 'declined' || p.status === 'pending_approval') && p.rule).length,
+      cardDeclined: paysIn.filter(p => p.status === 'failed').length,
+      spent: paysIn.filter(p => p.status === 'paid').reduce((s, p) => s + p.amountInWallet, 0), monthSpent: monthSpent(pays, nowIso), currency: wallet.currency,
+    },
     assumptions: A,
   };
 }
@@ -114,6 +123,7 @@ export function formatImpact(m: ImpactMetrics, lang: Lang): string {
       `• Конфликтов с погодой предотвращено: ${m.conflictsPrevented} · циклов закрыто с проверкой: ${m.loopsClosed}`,
       m.avgResponseMin !== null ? `• Среднее время ответа семьи: ${m.avgResponseMin} мин` : '',
       `• Выучено закономерностей: ${m.learning.patterns} · дел «делаю сам»: ${m.learning.choresAct}, «предлагаю»: ${m.learning.choresAsk}`,
+      `• Платежи: оплачено ${m.payments.paid} на ${m.payments.spent} ${m.payments.currency}, остановлено правилами ${m.payments.stoppedByRules}, возвратов ${m.payments.refunded}`,
       `⏱ Организатору сэкономлено ≈ ${h ? h + ' ч ' : ''}${mm} мин (оценка: ${m.assumptions.perDispatchedTask} мин/дело, ${m.assumptions.perSwap} мин/передача, ${m.assumptions.perConflictPrevented} мин/конфликт)`,
     ].filter(Boolean).join('\n');
   }
@@ -126,6 +136,7 @@ export function formatImpact(m: ImpactMetrics, lang: Lang): string {
     `• Weather conflicts prevented: ${m.conflictsPrevented} · loops closed with verification: ${m.loopsClosed}`,
     m.avgResponseMin !== null ? `• Family's average reply time: ${m.avgResponseMin} min` : '',
     `• Patterns learned: ${m.learning.patterns} · chores "I handle": ${m.learning.choresAct}, "I propose": ${m.learning.choresAsk}`,
+    `• Payments: ${m.payments.paid} paid for ${m.payments.spent} ${m.payments.currency}, ${m.payments.stoppedByRules} stopped by the rules, ${m.payments.refunded} refunded`,
     `⏱ Organiser time saved ≈ ${h ? h + ' h ' : ''}${mm} min (estimate: ${m.assumptions.perDispatchedTask} min/task, ${m.assumptions.perSwap} min/hand-over, ${m.assumptions.perConflictPrevented} min/conflict)`,
   ].filter(Boolean).join('\n');
 }
