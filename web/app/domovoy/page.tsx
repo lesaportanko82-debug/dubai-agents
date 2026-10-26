@@ -49,7 +49,8 @@ export default async function DomovoyHome() {
   const today = nowIso.slice(0, 10);
   const todays = tasks.filter(t => (t.dueAt ?? t.createdAt).slice(0, 10) === today);
   const openToday = todays.filter(t => OPEN.includes(t.status));
-  const overdue = openToday.filter(t => t.dueAt && t.dueAt < nowIso);
+  const nowMs = Date.parse(nowIso);
+  const overdue = openToday.filter(t => t.dueAt && Date.parse(t.dueAt) < nowMs);
   const inOrder = todays.length ? Math.round((100 * (todays.length - overdue.length)) / todays.length) : 100;
   const busiest = members.map(x => ({ x, n: tasks.filter(t => t.assigneeId === x.id && t.status === 'done').length })).sort((a, b) => b.n - a.n)[0];
   const totalDone = tasks.filter(t => t.status === 'done').length;
@@ -191,7 +192,7 @@ export default async function DomovoyHome() {
       <section aria-labelledby="day-h" className={`${card} flex flex-col gap-4`}>
         <div className="flex flex-wrap justify-between items-baseline gap-2">
           <h2 id="day-h" className="m-0 text-[20px] font-bold">{ru ? 'День семьи' : 'The family’s day'}</h2>
-          <span className="text-[14px] text-mute">{ru ? 'каждая линия — один человек' : 'one line per person'}</span>
+          <span className="hidden md:inline text-[14px] text-mute">{ru ? 'каждая линия — один человек' : 'one line per person'}</span>
         </div>
         {lanes.length === 0 ? (
           <p className="m-0 text-mute text-[15px] py-4">{ru ? 'На сегодня дел со временем нет. Надиктуйте агенту в Telegram, что нужно сделать, — он распределит.' : 'Nothing timed for today. Tell the agent in Telegram what needs doing — it will dispatch it.'}</p>
@@ -199,12 +200,12 @@ export default async function DomovoyHome() {
           <>
           {/* phone: one list in time order */}
           <ul className="md:hidden list-none m-0 p-0 flex flex-col">
-            {lanes.flatMap(({ x, items }) => items.map(t => ({ x, t }))).sort((a, b) => a.t.dueAt!.localeCompare(b.t.dueAt!)).map(({ x, t }, i, arr) => (
+            {lanes.flatMap(({ x, items }) => items.map(t => ({ x, t }))).sort((a, b) => Date.parse(a.t.dueAt!) - Date.parse(b.t.dueAt!)).map(({ x, t }, i, arr) => (
               <li key={t.id} className="flex items-center gap-3 min-h-[48px]" style={{ borderBottom: i < arr.length - 1 ? '1px solid var(--dm-line)' : 'none' }}>
                 <span className="w-11 shrink-0 text-[13px] text-mute num">{hhmm(t.dueAt!)}</span>
                 <span aria-hidden="true" className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: memberColor(x.id) }} />
                 <span className="flex-1 min-w-0 text-[15px] truncate" style={{ textDecoration: t.status === 'done' ? 'line-through' : 'none', color: t.status === 'done' ? 'var(--color-mute)' : undefined }}>{t.text} · {short(x)}</span>
-                {t.dueAt! < nowIso && OPEN.includes(t.status) && <span className="text-[12px] font-semibold rounded-lg px-2 py-1 shrink-0" style={{ background: '#FFF1DD', color: '#7A4510' }}>{ru ? 'просрочено' : 'late'}</span>}
+                {Date.parse(t.dueAt!) < nowMs && OPEN.includes(t.status) && <span className="text-[12px] font-semibold rounded-lg px-2 py-1 shrink-0" style={{ background: '#FFF1DD', color: '#7A4510' }}>{ru ? 'просрочено' : 'late'}</span>}
               </li>
             ))}
           </ul>
@@ -221,7 +222,7 @@ export default async function DomovoyHome() {
                     <div className="absolute inset-x-0 top-1/2 h-px" style={{ background: 'var(--dm-line)' }} />
                     {items.map(t => (
                       <span key={t.id} title={`${t.text} · ${hhmm(t.dueAt!)}`} className="absolute top-0 h-10 max-w-[180px] px-3 rounded-[10px] text-[13px] font-semibold flex items-center truncate"
-                        style={{ left: `min(${pct(t.dueAt!)}%, calc(100% - 180px))`, background: `color-mix(in srgb, ${memberColor(x.id)} 14%, white)`, color: `color-mix(in srgb, ${memberColor(x.id)} 80%, black)`, textDecoration: t.status === 'done' ? 'line-through' : 'none', outline: t.dueAt! < nowIso && OPEN.includes(t.status) ? '2px dashed var(--dm-pulse)' : 'none', outlineOffset: -2 }}>
+                        style={{ left: `min(${pct(t.dueAt!)}%, calc(100% - 180px))`, background: `color-mix(in srgb, ${memberColor(x.id)} 14%, white)`, color: `color-mix(in srgb, ${memberColor(x.id)} 80%, black)`, textDecoration: t.status === 'done' ? 'line-through' : 'none', outline: Date.parse(t.dueAt!) < nowMs && OPEN.includes(t.status) ? '2px dashed var(--dm-pulse)' : 'none', outlineOffset: -2 }}>
                         {hhmm(t.dueAt!)} · {t.text}
                       </span>
                     ))}
