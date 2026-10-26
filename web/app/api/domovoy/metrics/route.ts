@@ -5,6 +5,7 @@ import { impactMetrics } from '@core/domovoy/metrics';
 import { learningReport } from '@core/domovoy/learning';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 /** GET /api/domovoy/metrics?days=7 — impact numbers for the household of the current panel session (demo otherwise). */
 export async function GET(req: Request) {

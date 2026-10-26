@@ -7,6 +7,7 @@ import { getModelClient } from '@core/owed/llm';
 import { flushOutbox, telegramSender } from '@core/domovoy/telegram';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 /** POST { text, authorId } — run the agent for the household of the current panel session (demo family when not logged in). */
 export async function POST(req: Request) {
