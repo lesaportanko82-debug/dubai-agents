@@ -293,3 +293,24 @@ test('impactMetrics counts from the log and estimates time saved transparently',
   assert.equal(m.estimatedMinutesSaved, m.tasksCreated * A.perDispatchedTask + 1 * A.perReminder + 0 * A.perSwap + 1 * A.perAutonomousAction + 1 * A.perConflictPrevented);
   assert.ok(m.perMember.find(x => x.id === 'dad')!.done >= 3);
 });
+
+// ──────────── money: multi-currency threshold ────────────
+
+test('money checkpoint is multi-currency: household currency from timezone, sums converted before the check', async () => {
+  const { convert, defaultCurrency, needsMoneyApproval, parseCurrency, DEFAULT_THRESHOLD } = await import('../src/domovoy/policy');
+  assert.equal(defaultCurrency('Asia/Dubai'), 'AED');
+  assert.equal(defaultCurrency('Asia/Almaty'), 'KZT');
+  assert.equal(defaultCurrency('Europe/Istanbul'), 'TRY');
+  assert.equal(defaultCurrency('Europe/Moscow'), 'RUB');
+  assert.equal(parseCurrency('дирхам'), 'AED');
+  assert.equal(parseCurrency('тенге'), 'KZT');
+  assert.equal(parseCurrency('$'), 'USD');
+  assert.equal(parseCurrency('xyz'), undefined);
+  assert.ok(Math.abs(convert(100, 'USD', 'AED') - 367) < 1);
+  const kz = { currency: 'KZT' as const, moneyThreshold: DEFAULT_THRESHOLD.KZT };
+  assert.equal(needsMoneyApproval(10000, 'KZT', kz).needs, false);
+  assert.equal(needsMoneyApproval(100, 'USD', kz).needs, true, '100 USD ≈ 54k KZT > 30k');
+  const ae = new InMemoryDomovoyStore(DEMO_FAMILY, { tz: 'Asia/Almaty' });
+  assert.equal(ae.currency, 'KZT');
+  assert.equal(ae.moneyThreshold, 30000);
+});

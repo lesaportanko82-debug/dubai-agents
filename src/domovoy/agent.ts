@@ -12,7 +12,8 @@ import { KID_SKILLS } from './fixtures';
 import { patternContext } from './memory';
 import { getWeather, analyzeWeatherAlerts, formatWeatherForAgent } from './integrations';
 import { checkCalendar, checkFamilyCalendars } from './integrations';
-import { MONEY_THRESHOLD, executeAction, requestApproval, touchesChild } from './approvals';
+import { executeAction, requestApproval, touchesChild } from './approvals';
+import { CURRENCIES, formatMoney, needsMoneyApproval, parseCurrency } from './policy';
 import { decideAutonomy } from './learning';
 
 function hourIn(iso: string, tz: string): number {
@@ -191,14 +192,14 @@ export const DISPATCH_TOOLS: ToolDef[] = [
   },
   {
     name: 'request_approval',
-    description: `Human checkpoint. MUST be used instead of acting when the request involves: spending money above ${MONEY_THRESHOLD.amount} ${MONEY_THRESHOLD.currency} (spend_money), cancelling someone else's task (cancel_task), sending family data to someone outside the household (share_outside), or changing a child's fixed activity (change_child_schedule). Creates a pending decision for the right people (parents/admins) with approve/reject buttons and returns its id. Do not promise the outcome — say it is awaiting approval.`,
+    description: `Human checkpoint. MUST be used instead of acting when the request involves: spending money (spend_money — pass amount + currency as written; the system converts to the family currency and asks the parents only above the family threshold, otherwise records it), cancelling someone else's task (cancel_task), sending family data to someone outside the household (share_outside), or changing a child's fixed activity (change_child_schedule). Creates a pending decision for the right people (parents/admins) with approve/reject buttons and returns its id. Do not promise the outcome — say it is awaiting approval.`,
     input_schema: {
       type: 'object',
       properties: {
         action: { type: 'string', enum: ['spend_money', 'cancel_task', 'share_outside', 'change_child_schedule', 'reschedule_task'] },
         reason_ru: { type: 'string', description: 'What exactly will happen if approved, in Russian, one or two lines' },
         reason_en: { type: 'string', description: 'Same in English' },
-        task_id: { type: 'string' }, amount: { type: 'number' }, currency: { type: 'string' }, purpose: { type: 'string' },
+        task_id: { type: 'string' }, amount: { type: 'number' }, currency: { type: 'string', description: `ISO code or as written (${CURRENCIES.join(', ')}; дирхам, руб, тенге, $…)` }, purpose: { type: 'string' },
         new_due_at: { type: 'string' }, what: { type: 'string' }, to: { type: 'string' },
       },
       required: ['action', 'reason_ru', 'reason_en'],
@@ -232,7 +233,7 @@ export async function runDispatch(client: ModelClient, store: DomovoyStore, auth
 
   const messages: any[] = [{ role: 'user', content: `From: ${author.name} (role: ${author.role}, id: ${author.id}${author.age ? ', age: ' + author.age : ''}${author.isAdmin ? ', admin' : ''})\nNow: ${now} (${tz})\n\nMessage:\n${text}` }];
   for (let step = 0; step < (opts.maxSteps ?? 10); step++) {
-    const res = await client.create({ model: opts.model ?? defaultModel(), max_tokens: 2000, system: buildDispatchSystem(opts.mode ?? 'classic') + patternCtx, tools: DISPATCH_TOOLS, messages });
+    const res = await client.create({ model: opts.model ?? defaultModel(), max_tokens: 2000, system: buildDispatchSystem(opts.mode ?? 'classic', { amount: store.moneyThreshold, currency: store.currency }) + patternCtx, tools: DISPATCH_TOOLS, messages });
     messages.push({ role: 'assistant', content: res.content });
     const calls = res.content.filter((b): b is Extract<ContentBlock, { type: 'tool_use' }> => b.type === 'tool_use');
     if (res.stop_reason !== 'tool_use' || !calls.length) {
@@ -447,7 +448,17 @@ export async function runDispatch(client: ModelClient, store: DomovoyStore, auth
       const r = RequestApprovalIn.parse(input);
       const payload: Record<string, unknown> = {};
       if (r.task_id) payload.taskId = r.task_id;
-      if (r.action === 'spend_money') { if (r.amount === undefined) throw new Error('amount required'); Object.assign(payload, { amount: r.amount, currency: r.currency ?? MONEY_THRESHOLD.currency, purpose: r.purpose ?? '' }); }
+      if (r.action === 'spend_money') {
+        if (r.amount === undefined) throw new Error('amount required');
+        const cur = parseCurrency(r.currency) ?? store.currency;
+        const check = needsMoneyApproval(r.amount, cur, { currency: store.currency, moneyThreshold: store.moneyThreshold });
+        Object.assign(payload, { amount: r.amount, currency: cur, purpose: r.purpose ?? '', inHouseholdCurrency: check.inHousehold });
+        if (!check.needs) {
+          // below the family threshold → no checkpoint, just an auditable record
+          await executeAction(store, 'spend_money', payload, now, { decidedBy: authorId });
+          return { ok: true, below_threshold: true, recorded: formatMoney(r.amount, cur), equals: formatMoney(check.inHousehold, store.currency), threshold: formatMoney(store.moneyThreshold, store.currency), note: 'Below the family threshold: recorded, no approval needed. Proceed with the task.' };
+        }
+      }
       if (r.action === 'reschedule_task' || r.action === 'change_child_schedule') { if (!r.new_due_at || !r.task_id) throw new Error('task_id and new_due_at required'); payload.newDueAt = r.new_due_at; }
       if (r.action === 'cancel_task' && !r.task_id) throw new Error('task_id required');
       if (r.action === 'share_outside') Object.assign(payload, { what: r.what ?? '', to: r.to ?? '' });

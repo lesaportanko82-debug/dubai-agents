@@ -91,6 +91,9 @@ export interface Household {
   inviteCode: string;
   pin: string;
   mode: HouseholdMode;
+  /** currency the family thinks in; sums above moneyThreshold need an admin */
+  currency?: string;
+  moneyThreshold?: number;
 }
 
 export type GoalType = 'streak' | 'total' | 'deadline';

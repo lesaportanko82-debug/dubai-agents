@@ -14,6 +14,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import type { DomovoyStore } from './store';
 import type { AgentPlan, Approval, DispatchRun, Goal, Household, Insight, Lang, Member, MessageStyle, OutgoingMessage, Pattern, Reminder, Task, TaskEvent } from './types';
 import type { HouseholdMode } from './types';
+import { DEFAULT_THRESHOLD, defaultCurrency, type Currency } from './policy';
 
 type Row = Record<string, any>;
 
@@ -34,7 +35,7 @@ const memberToRow = (householdId: string, m: Member): Row => ({
   availability: m.availability ?? [],
   calendar_id: m.calendarId ?? null,
 });
-const householdFromRow = (r: Row): Household => ({ id: r.id, name: r.name, tz: r.tz, lang: r.lang, inviteCode: r.invite_code, pin: r.pin ?? '', mode: (r.mode as HouseholdMode) ?? 'classic' });
+const householdFromRow = (r: Row): Household => ({ id: r.id, name: r.name, tz: r.tz, lang: r.lang, inviteCode: r.invite_code, pin: r.pin ?? '', mode: (r.mode as HouseholdMode) ?? 'classic', currency: r.currency ?? undefined, moneyThreshold: r.money_threshold ?? undefined });
 
 const goalFromRow = (r: Row): Goal => ({
   id: r.id, householdId: r.household_id, title: r.title, targetMemberId: r.target_member_id,
@@ -80,6 +81,8 @@ export class SupabaseDomovoyStore implements DomovoyStore {
   readonly tz: string;
   readonly mode: HouseholdMode;
   readonly lang: Lang;
+  readonly currency: Currency;
+  readonly moneyThreshold: number;
   private _members?: Member[];
   private _tasks?: Task[];
   private _events?: TaskEvent[];
@@ -88,6 +91,8 @@ export class SupabaseDomovoyStore implements DomovoyStore {
     this.tz = household.tz;
     this.mode = household.mode;
     this.lang = household.lang;
+    this.currency = (household.currency as Currency | undefined) ?? defaultCurrency(household.tz);
+    this.moneyThreshold = household.moneyThreshold ?? DEFAULT_THRESHOLD[this.currency];
   }
 
   async members() {
@@ -308,10 +313,16 @@ export class DomovoyDb {
     fail('allHouseholds', error);
     return (data ?? []).map(householdFromRow);
   }
-  async createHousehold(input: { name: string; tz: string; lang: Lang }): Promise<Household> {
-    const { data, error } = await this.sb.from('dm_households').insert({ name: input.name, tz: input.tz, lang: input.lang }).select('*').single();
+  async createHousehold(input: { name: string; tz: string; lang: Lang; currency?: Currency }): Promise<Household> {
+    const currency = input.currency ?? defaultCurrency(input.tz);
+    const { data, error } = await this.sb.from('dm_households').insert({ name: input.name, tz: input.tz, lang: input.lang, currency, money_threshold: DEFAULT_THRESHOLD[currency] }).select('*').single();
     fail('createHousehold', error);
     return householdFromRow(data!);
+  }
+  /** Admin changed the family's currency / money checkpoint. */
+  async setMoneyPolicy(householdId: string, currency: Currency, moneyThreshold: number) {
+    const { error } = await this.sb.from('dm_households').update({ currency, money_threshold: moneyThreshold }).eq('id', householdId);
+    fail('setMoneyPolicy', error);
   }
 
   /** Which household and member does this chat belong to? */

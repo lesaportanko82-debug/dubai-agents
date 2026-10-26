@@ -61,7 +61,7 @@ export async function POST(req: Request) {
         const link = await db.memberByChat(chatId);
         if (link) {
           const store = db.store(link.household);
-          await handleUpdate(store, upd, { send, model: () => getModelClient() });
+          await handleUpdate(store, upd, { send, model: () => getModelClient(), setMoneyPolicy: (c, t) => db.setMoneyPolicy(link.household.id, c, t) });
         } else {
           // Check if there's a session with a household (post-onboarding, not yet linked in dm_members)
           const session = await db.session(chatId);
@@ -69,7 +69,7 @@ export async function POST(req: Request) {
             const h = await db.household(session.householdId);
             if (h) {
               const store = db.store(h);
-              await handleUpdate(store, upd, { send, model: () => getModelClient() });
+              await handleUpdate(store, upd, { send, model: () => getModelClient(), setMoneyPolicy: (c, t) => db.setMoneyPolicy(h.id, c, t) });
             }
           }
         }

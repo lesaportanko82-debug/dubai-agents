@@ -20,6 +20,7 @@ import { decideApproval } from './approvals';
 import { runAutonomy } from './autonomy';
 import { impactMetrics, formatImpact } from './metrics';
 import { learningReport, formatLearning } from './learning';
+import { CURRENCIES, DEFAULT_THRESHOLD, formatMoney, parseCurrency } from './policy';
 
 // ---------- Telegram shapes (only what we use) ----------
 export interface TgUser { id: number; first_name?: string; language_code?: string }
@@ -46,6 +47,8 @@ export interface TelegramDeps {
   model?: () => Promise<ModelClient>;
   /** update ids already processed (Telegram retries on slow responses) */
   seen?: Set<number>;
+  /** persist the family's currency / money threshold (admin command /currency) */
+  setMoneyPolicy?: (currency: import('./policy').Currency, threshold: number) => Promise<void>;
 }
 
 // ---------- UI strings ----------
@@ -67,8 +70,8 @@ const T = {
   noModel: { ru: 'На сервере не настроен ключ модели — распределять новые дела пока не могу.', en: 'No model key is configured on the server — I cannot dispatch new tasks yet.', tl: 'Walang model key sa server.' },
   myTasks: { ru: 'Ваши дела:', en: 'Your tasks:', tl: 'Mga gawain mo:' },
   help: {
-    ru: 'Я понимаю обычные ответы: «ок», «не могу», «могу через 2 часа», «готово», фото как подтверждение.\nКоманды: /tasks — мои дела, /report — итоги недели, /impact — что я сделал и сколько времени сэкономил, /learned — чему научился, /approvals — что ждёт вашего решения, /connect — подключить Google Calendar, /panel — веб-панель, /switch — выбрать другого члена семьи (для теста).',
-    en: 'I understand plain replies: “ok”, “can’t”, “can in 2 hours”, “done”, a photo as proof.\nCommands: /tasks — my tasks, /report — weekly summary, /impact — what I did and the time saved, /learned — what I have learned, /approvals — decisions waiting for you, /connect — Google Calendar, /panel — web panel, /switch — pick another member (for testing).',
+    ru: 'Я понимаю обычные ответы: «ок», «не могу», «могу через 2 часа», «готово», фото как подтверждение.\nКоманды: /tasks — мои дела, /report — итоги недели, /impact — что я сделал и сколько времени сэкономил, /learned — чему научился, /currency — валюта и порог трат, /approvals — что ждёт вашего решения, /connect — подключить Google Calendar, /panel — веб-панель, /switch — выбрать другого члена семьи (для теста).',
+    en: 'I understand plain replies: “ok”, “can’t”, “can in 2 hours”, “done”, a photo as proof.\nCommands: /tasks — my tasks, /report — weekly summary, /impact — what I did and the time saved, /learned — what I have learned, /currency — currency and spending threshold, /approvals — decisions waiting for you, /connect — Google Calendar, /panel — web panel, /switch — pick another member (for testing).',
     tl: 'Naiintindihan ko: “ok”, “hindi ko kaya”, “tapos na”, larawan bilang patunay.\nCommands: /tasks, /report, /panel, /switch.',
   },
   btnApprove: { ru: 'да, делай ✅', en: 'yes, do it ✅', tl: 'oo, gawin ✅' }, btnReject: { ru: 'нет, оставь', en: 'no, leave it', tl: 'hindi, hayaan' },
@@ -324,6 +327,24 @@ export async function handleUpdate(store: DomovoyStore, upd: TgUpdate, deps: Tel
       await send.sendMessage(chatId, (me.lang === 'ru' ? `🛡️ ${a.reason.ru}` : `🛡️ ${a.reason.en}`) + `\n⌛ ${fmtTime(a.expiresAt, tz)}`,
         [[{ text: t('btnApprove', me.lang), data: `ap:${a.id}` }, { text: t('btnReject', me.lang), data: `rj:${a.id}` }]]);
     }
+    return;
+  }
+  // /currency [CODE [threshold]] — admin-only: the family's currency and the sum above which parents must approve
+  const curMatch = text.match(/^\/currency(?:\s+(\S+))?(?:\s+(\d+))?/i);
+  if (curMatch) {
+    const current = store.lang === 'ru' || me.lang === 'ru'
+      ? `💱 Валюта семьи: ${store.currency}. Траты выше ${formatMoney(store.moneyThreshold, store.currency)} требуют одобрения родителей.\nСменить: /currency KZT 30000 (валюта и порог). Доступно: ${CURRENCIES.join(', ')}.`
+      : `💱 Family currency: ${store.currency}. Spending above ${formatMoney(store.moneyThreshold, store.currency)} needs a parent's approval.\nChange: /currency KZT 30000 (currency and threshold). Available: ${CURRENCIES.join(', ')}.`;
+    if (!curMatch[1]) { await send.sendMessage(chatId, current); return; }
+    if (!me.isAdmin) { await send.sendMessage(chatId, me.lang === 'ru' ? 'Только для администраторов.' : 'Admins only.'); return; }
+    const cur = parseCurrency(curMatch[1]);
+    if (!cur) { await send.sendMessage(chatId, (me.lang === 'ru' ? 'Не знаю такой валюты. Доступно: ' : 'Unknown currency. Available: ') + CURRENCIES.join(', ')); return; }
+    const threshold = curMatch[2] ? parseInt(curMatch[2]) : DEFAULT_THRESHOLD[cur];
+    if (deps.setMoneyPolicy) await deps.setMoneyPolicy(cur, threshold);
+    else { (store as any).currency = cur; (store as any).moneyThreshold = threshold; }
+    await send.sendMessage(chatId, me.lang === 'ru'
+      ? `✅ Валюта семьи: ${cur}. Порог одобрения: ${formatMoney(threshold, cur)}. Суммы в других валютах пересчитываю по курсу.`
+      : `✅ Family currency: ${cur}. Approval threshold: ${formatMoney(threshold, cur)}. Sums in other currencies are converted.`);
     return;
   }
   // /demo rain|heat|storm — admin-only: run the autonomous scenarios against synthetic weather (for the showcase)

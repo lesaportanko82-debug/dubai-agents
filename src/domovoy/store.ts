@@ -1,3 +1,5 @@
+import type { Currency } from './policy';
+import { DEFAULT_THRESHOLD, defaultCurrency } from './policy';
 import type { AgentPlan, Approval, DispatchRun, Goal, HouseholdMode, Lang, Insight, Member, OutgoingMessage, Pattern, Reminder, Task, TaskEvent } from './types';
 
 export interface DomovoyStore {
@@ -7,6 +9,9 @@ export interface DomovoyStore {
   readonly mode: HouseholdMode;
   /** family language for texts the agent writes on its own */
   readonly lang: Lang;
+  /** money checkpoint: currency the family uses and the sum above which an admin must approve */
+  readonly currency: Currency;
+  readonly moneyThreshold: number;
   members(): Promise<Member[]>;
   saveMember(m: Member): Promise<void>;
   removeMember(id: string): Promise<void>;
@@ -50,6 +55,8 @@ export class InMemoryDomovoyStore implements DomovoyStore {
   readonly tz: string;
   readonly mode: HouseholdMode;
   readonly lang: Lang;
+  currency: Currency;
+  moneyThreshold: number;
   private _tasks: Task[] = [];
   private _events: TaskEvent[] = [];
   private _outbox: OutgoingMessage[] = [];
@@ -63,11 +70,13 @@ export class InMemoryDomovoyStore implements DomovoyStore {
   private _insightSeq = 0;
   private _patternSeq = 0;
   private _seq = 0;
-  constructor(private _members: Member[], opts: { householdId?: string; tz?: string; mode?: HouseholdMode; lang?: Lang } = {}) {
+  constructor(private _members: Member[], opts: { householdId?: string; tz?: string; mode?: HouseholdMode; lang?: Lang; currency?: Currency; moneyThreshold?: number } = {}) {
     this.householdId = opts.householdId ?? 'demo';
     this.tz = opts.tz ?? 'Asia/Dubai';
     this.mode = opts.mode ?? 'classic';
     this.lang = opts.lang ?? 'ru';
+    this.currency = opts.currency ?? defaultCurrency(this.tz);
+    this.moneyThreshold = opts.moneyThreshold ?? DEFAULT_THRESHOLD[this.currency];
   }
   async members() { return this._members; }
   async saveMember(m: Member) {

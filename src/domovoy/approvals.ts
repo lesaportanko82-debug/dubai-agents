@@ -32,8 +32,6 @@ export const APPROVAL_POLICY: Record<ApprovalAction, ApprovalRule> = {
   share_outside:         { who: 'admins', ttlMin: 60,  label: { ru: 'передача данных вне семьи', en: 'sharing data outside the family' } },
 };
 
-export { MONEY_THRESHOLD } from './policy';
-import { MONEY_THRESHOLD } from './policy';
 
 const say = (lang: Lang, ru: string, en: string) => (lang === 'ru' ? ru : en);
 const plus = (iso: string, min: number) => new Date(new Date(iso).getTime() + min * 60_000).toISOString();
