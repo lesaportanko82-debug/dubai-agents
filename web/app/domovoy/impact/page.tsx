@@ -91,11 +91,11 @@ export default async function ImpactPage({ searchParams }: { searchParams: Promi
           {m.perMember.map(p => {
             const mem = members.find(x => x.id === p.id)!;
             return (
-              <div key={p.id} className="grid grid-cols-[1fr_80px_90px_140px] items-center gap-3 py-1.5 border-b border-stone-100 last:border-0">
-                <div className="flex items-center gap-2"><Avatar m={mem} size={22} /><span>{p.name}</span></div>
-                <div className="num text-right">{p.done} {ru ? 'дел' : 'done'}</div>
-                <div className="num text-right">{p.minutes} {ru ? 'мин' : 'min'}</div>
-                <div className="text-right text-[12px]">{p.autonomy ? <span className="px-2 py-0.5 rounded-full text-white" style={{ background: LEVEL[p.autonomy].color }}>{ru ? LEVEL[p.autonomy].ru : LEVEL[p.autonomy].en}</span> : <span className="text-mute">—</span>}</div>
+              <div key={p.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-1.5 border-b border-stone-100 last:border-0">
+                <div className="flex items-center gap-2 flex-1 min-w-[140px]"><Avatar m={mem} size={22} /><span>{p.name}</span></div>
+                <div className="num text-right w-[64px]">{p.done} {ru ? 'дел' : 'done'}</div>
+                <div className="num text-right w-[76px]">{p.minutes} {ru ? 'мин' : 'min'}</div>
+                <div className="text-right text-[12px] w-[110px]">{p.autonomy ? <span className="px-2 py-0.5 rounded-full text-white" style={{ background: LEVEL[p.autonomy].color }}>{ru ? LEVEL[p.autonomy].ru : LEVEL[p.autonomy].en}</span> : <span className="text-mute">—</span>}</div>
               </div>
             );
           })}

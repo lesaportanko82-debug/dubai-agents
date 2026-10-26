@@ -234,3 +234,13 @@ test('remember_fact through the agent refuses values the author did not say', as
   assert.equal(facts[0].key, 'allergy:son');
   assert.equal(facts[0].access, 'adults');
 });
+
+test('family redaction keeps addresses and words like «мёд.», strips e-mails, cards and phones', async () => {
+  const { redact } = await import('../src/domovoy/redact');
+  const r = redact('Запомни: у Маши аллергия на мёд. Доставка: ул. Аль-Марина, д. 36, кв. 12. Тренер +971 50 123 45 67, карта 4111 1111 1111 1111, mail a@b.co, в 17:00');
+  assert.ok(r.text.includes('мёд.'));
+  assert.ok(r.text.includes('ул. Аль-Марина, д. 36, кв. 12'));
+  assert.ok(r.text.includes('17:00'));
+  assert.ok(!r.text.includes('4111') && !r.text.includes('a@b.co') && !r.text.includes('123 45 67'));
+  assert.equal(r.removed, 3);
+});

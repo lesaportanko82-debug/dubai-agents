@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import type { ContentBlock, ModelClient, ToolDef, TraceStep } from '../owed/agent';
-import { redact } from '../owed/redact';
+import { redact } from './redact';
 import { defaultModel } from '../owed/llm';
 import { buildDispatchSystem } from './prompts';
 import type { DomovoyStore } from './store';
@@ -538,6 +538,8 @@ export async function runDispatch(client: ModelClient, store: DomovoyStore, auth
       const msg = text.toLowerCase();
       const found = words.filter(w => msg.includes(w)).length;
       if (words.length && found / words.length < 0.6) throw new Error(`Refused: "${r.value}" is not in the author's message. Never invent facts — ask the author and store what they answer.`);
+      // a fact about a person always carries the member id in the key (allergy → allergy:demo_masha)
+      if (r.about_member_id && !r.key.includes(':')) r.key = `${r.key}:${r.about_member_id}`;
       // key suffix after ':' must be a member id
       const suffix = r.key.includes(':') ? r.key.split(':')[1].toLowerCase() : undefined;
       if (suffix && !members.some(m => m.id.toLowerCase() === suffix)) {
