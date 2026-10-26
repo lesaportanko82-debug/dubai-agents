@@ -28,21 +28,6 @@ export async function POST(req: Request) {
   const db = getDomovoyDb();
 
   try {
-    // piggy-back the scheduler on incoming traffic
-    if (Date.now() - lastTick > TICK_EVERY_MS) {
-      lastTick = Date.now();
-      if (db) {
-        // tick all households
-        for (const h of await db.allHouseholds()) {
-          const s = db.store(h);
-          await tick(s, new Date().toISOString());
-          await flushOutbox(s, send);
-        }
-      } else {
-        await tickAndFlush(domovoyState().store, send);
-      }
-    }
-
     if (db) {
       // Multi-household: resolve chat → household via DomovoyDb
       const chatId = String(upd.message?.chat.id ?? upd.callback_query?.message?.chat.id ?? upd.callback_query?.from.id ?? '');
@@ -81,6 +66,21 @@ export async function POST(req: Request) {
     }
   } catch (e) {
     console.error('telegram webhook', e);
+  }
+
+  // piggy-back the scheduler on incoming traffic — after the reply, and its failures never block one
+  if (Date.now() - lastTick > TICK_EVERY_MS) {
+    lastTick = Date.now();
+    try {
+      if (db) {
+        await Promise.all((await db.allHouseholds()).map(async h => {
+          try { const s = db.store(h); await tick(s, new Date().toISOString()); await flushOutbox(s, send); }
+          catch (e) { console.error('tick', h.id, e); }
+        }));
+      } else {
+        await tickAndFlush(domovoyState().store, send);
+      }
+    } catch (e) { console.error('tick', e); }
   }
   return NextResponse.json({ ok: true });
 }
