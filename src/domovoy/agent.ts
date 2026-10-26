@@ -43,7 +43,7 @@ const PlanSequenceIn = z.object({
   steps: z.array(z.object({
     description: z.string().min(2).max(200),
     tool: z.string(),
-    args: z.record(z.unknown()),
+    args: z.record(z.string(), z.unknown()),
   })).min(1).max(8),
 });
 const SetReminderIn = z.object({
@@ -295,7 +295,7 @@ export async function runDispatch(client: ModelClient, store: DomovoyStore, auth
     }
     if (name === 'check_weather') {
       const { city, country_code } = CheckWeatherIn.parse(input);
-      const weather = await getWeather({ city: city ?? 'Dubai', countryCode: country_code ?? 'AE' });
+      const weather = await getWeather({ city: city ?? 'Dubai' });
       const alerts = analyzeWeatherAlerts(weather);
       return formatWeatherForAgent(weather, alerts);
     }

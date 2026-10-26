@@ -79,7 +79,7 @@ export async function transcribeBuffer(audioBuffer: Buffer, format = 'ogg'): Pro
 
   try {
     const formData = new FormData();
-    const blob = new Blob([audioBuffer], { type: `audio/${format}` });
+    const blob = new Blob([new Uint8Array(audioBuffer)], { type: `audio/${format}` });
     formData.append('file', blob, `voice.${format}`);
     formData.append('model', 'whisper-1');
     formData.append('response_format', 'verbose_json');

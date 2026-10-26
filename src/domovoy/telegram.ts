@@ -346,8 +346,8 @@ export async function handleUpdate(store: DomovoyStore, upd: TgUpdate, deps: Tel
     if (deps.model) {
       try {
         const analysis = await analyzePhoto(`tg:${fileId}`);
-        if (analysis.confidence > 0.5 && analysis.tasks.length > 0) {
-          const taskDescriptions = analysis.tasks.map(t => t.text).join(', ');
+        if (analysis.confidence > 0.5 && analysis.suggestedTasks.length > 0) {
+          const taskDescriptions = analysis.suggestedTasks.map((t: { text: { ru: string; en: string } }) => t.text.en).join(', ');
           const client = await deps.model();
           const result = await runDispatch(client, store, me.id, taskDescriptions, { now, tz, mode: store.mode });
           await flush();

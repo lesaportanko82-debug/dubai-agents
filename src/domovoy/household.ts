@@ -270,19 +270,19 @@ export async function tick(store: DomovoyStore, nowIso: string) {
   const hoursSinceWeather = lastWeatherRun ? (now - t2(lastWeatherRun.at)) / 3_600_000 : Infinity;
   if (hoursSinceWeather >= 1) {
     try {
-      const weather = await getWeather({ city: 'Dubai', countryCode: 'AE' });
+      const weather = await getWeather({ city: 'Dubai' });
       const alerts = analyzeWeatherAlerts(weather);
       if (alerts.length > 0) {
         // Create weather_alert insights for admins
         const recentInsights = await store.insights({ limit: 20 });
         const lastHourAlerts = recentInsights.filter(i => i.insightType === 'weather_alert' && t2(i.createdAt) > now - 3_600_000);
         if (lastHourAlerts.length === 0) {
-          const taskSuggestions = alerts.flatMap((a: WeatherAlert) => a.suggestedTasks ?? []);
+          const taskSuggestions = alerts.map((a: WeatherAlert) => a.taskSuggestion.en);
           for (const m of members.filter(m => m.isAdmin)) {
             const ins: Insight = {
               householdId: store.householdId, insightType: 'weather_alert',
               targetMemberId: m.id, delivered: false, createdAt: nowIso,
-              data: { alerts: alerts.map((a: WeatherAlert) => a.type), conditions: weather.current.description, temp: weather.current.temp, suggestedTasks: taskSuggestions },
+              data: { alerts: alerts.map((a: WeatherAlert) => a.type), conditions: weather.description, temp: weather.temp, suggestedTasks: taskSuggestions },
             };
             await store.saveInsight(ins);
             const text = formatInsight(ins, m.lang);
