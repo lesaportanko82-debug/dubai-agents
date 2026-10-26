@@ -36,7 +36,7 @@ function left(ms: number, ru: boolean) {
   const m = Math.round(ms / 60_000), h = Math.floor(m / 60), mm = m % 60;
   return ru ? `ещё ${h ? `${h} ч ` : ''}${mm} мин` : `${h ? `${h} h ` : ''}${mm} min left`;
 }
-const ttl = (min: number, ru: boolean) => (min >= 60 ? `${min / 60} ${ru ? 'ч' : 'h'}` : `${min} ${ru ? 'мин' : 'min'}`);
+const ttl = (min: number, ru: boolean) => (min >= 60 && min % 60 === 0 ? `${min / 60} ${ru ? "ч" : "h"}` : `${min} ${ru ? "мин" : "min"}`);
 
 export default async function ApprovalsPage() {
   const lang = await getLang();
