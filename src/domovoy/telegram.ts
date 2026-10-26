@@ -494,7 +494,7 @@ export async function handleUpdate(store: DomovoyStore, upd: TgUpdate, deps: Tel
       const s = result.summary?.trim();
       const prefix = me.lang === 'ru' ? `🎤 «${transcription.text}»\n\n` : `🎤 "${transcription.text}"\n\n`;
       if (s && s !== '✓' && s !== '✔') await send.sendMessage(chatId, prefix + s);
-      else await send.sendMessage(chatId, prefix + '✓');
+      else await send.sendMessage(chatId, prefix + (me.lang === 'ru' ? 'Принято — дела распределены, исполнители получили сообщения.' : 'Got it — tasks dispatched, the people involved have been messaged.'));
     } catch (e: any) {
       await send.sendMessage(chatId, `⚠️ ${e?.message ?? String(e)}`);
     }

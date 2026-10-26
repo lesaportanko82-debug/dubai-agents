@@ -609,7 +609,8 @@ export async function runDispatch(client: ModelClient, store: DomovoyStore, auth
       // P2.3 Mutual assignment detection: if B assigned a task to A within 5 min, warn both
       const fiveAgo = new Date(new Date(now).getTime() - 5 * 60_000).toISOString();
       const allTasks = await store.tasks();
-      const mutual = allTasks.find(x =>
+      // never for a self-assignment: one person cannot "assign to each other"
+      const mutual = a.member_id !== authorId && allTasks.find(x =>
         x.id !== t.id &&
         x.authorId === a.member_id &&
         x.assigneeId === authorId &&
