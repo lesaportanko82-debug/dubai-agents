@@ -196,7 +196,20 @@ export default async function DomovoyHome() {
         {lanes.length === 0 ? (
           <p className="m-0 text-mute text-[15px] py-4">{ru ? 'На сегодня дел со временем нет. Надиктуйте агенту в Telegram, что нужно сделать, — он распределит.' : 'Nothing timed for today. Tell the agent in Telegram what needs doing — it will dispatch it.'}</p>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          {/* phone: one list in time order */}
+          <ul className="md:hidden list-none m-0 p-0 flex flex-col">
+            {lanes.flatMap(({ x, items }) => items.map(t => ({ x, t }))).sort((a, b) => a.t.dueAt!.localeCompare(b.t.dueAt!)).map(({ x, t }, i, arr) => (
+              <li key={t.id} className="flex items-center gap-3 min-h-[48px]" style={{ borderBottom: i < arr.length - 1 ? '1px solid var(--dm-line)' : 'none' }}>
+                <span className="w-11 shrink-0 text-[13px] text-mute num">{hhmm(t.dueAt!)}</span>
+                <span aria-hidden="true" className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: memberColor(x.id) }} />
+                <span className="flex-1 min-w-0 text-[15px] truncate" style={{ textDecoration: t.status === 'done' ? 'line-through' : 'none', color: t.status === 'done' ? 'var(--color-mute)' : undefined }}>{t.text} · {short(x)}</span>
+                {t.dueAt! < nowIso && OPEN.includes(t.status) && <span className="text-[12px] font-semibold rounded-lg px-2 py-1 shrink-0" style={{ background: '#FFF1DD', color: '#7A4510' }}>{ru ? 'просрочено' : 'late'}</span>}
+              </li>
+            ))}
+          </ul>
+          {/* desktop: one lane per person */}
+          <div className="hidden md:block overflow-x-auto">
             <div className="min-w-[720px] flex flex-col gap-2.5">
               <div className="relative ml-[120px] h-5 text-[12px] text-mute">
                 {[7, 10, 13, 16, 19, 22].map(h => <span key={h} className="absolute -translate-x-1/2" style={{ left: `${((h - H0) / (H1 - H0)) * 100}%` }}>{h}:00</span>)}
@@ -208,7 +221,7 @@ export default async function DomovoyHome() {
                     <div className="absolute inset-x-0 top-1/2 h-px" style={{ background: 'var(--dm-line)' }} />
                     {items.map(t => (
                       <span key={t.id} title={`${t.text} · ${hhmm(t.dueAt!)}`} className="absolute top-0 h-10 max-w-[180px] px-3 rounded-[10px] text-[13px] font-semibold flex items-center truncate"
-                        style={{ left: `${pct(t.dueAt!)}%`, background: `color-mix(in srgb, ${memberColor(x.id)} 14%, white)`, color: `color-mix(in srgb, ${memberColor(x.id)} 80%, black)`, textDecoration: t.status === 'done' ? 'line-through' : 'none', outline: t.dueAt! < nowIso && OPEN.includes(t.status) ? '2px dashed var(--dm-pulse)' : 'none', outlineOffset: -2 }}>
+                        style={{ left: `min(${pct(t.dueAt!)}%, calc(100% - 180px))`, background: `color-mix(in srgb, ${memberColor(x.id)} 14%, white)`, color: `color-mix(in srgb, ${memberColor(x.id)} 80%, black)`, textDecoration: t.status === 'done' ? 'line-through' : 'none', outline: t.dueAt! < nowIso && OPEN.includes(t.status) ? '2px dashed var(--dm-pulse)' : 'none', outlineOffset: -2 }}>
                         {hhmm(t.dueAt!)} · {t.text}
                       </span>
                     ))}
@@ -217,6 +230,7 @@ export default async function DomovoyHome() {
               ))}
             </div>
           </div>
+          </>
         )}
       </section>
 
