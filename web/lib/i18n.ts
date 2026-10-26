@@ -9,7 +9,7 @@ const dict = {
     owed_tag: 'Возврат затрат на брак',
     lang_toggle: 'EN',
     // nav domovoy
-    d_home: 'Сегодня в доме',
+    d_home: 'Семейный круг',
     d_family: 'Семья',
     d_tasks: 'Доска дел',
     d_trace: 'Как решал агент',
@@ -44,7 +44,7 @@ const dict = {
     domovoy_tag: 'Household dispatcher',
     owed_tag: 'Warranty-cost recovery',
     lang_toggle: 'RU',
-    d_home: 'Today at home',
+    d_home: 'Family circle',
     d_family: 'Family',
     d_tasks: 'Task board',
     d_trace: 'Agent decisions',

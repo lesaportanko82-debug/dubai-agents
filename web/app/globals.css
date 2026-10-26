@@ -40,11 +40,28 @@
   --accent-deep: var(--color-verdigris-deep);
   --accent-wash: var(--color-verdigris-wash);
 }
+/* Домовой — «Семейный круг»: опора (forest), очаг (amber), воздух (sage mist) */
 [data-product="domovoy"] {
-  --accent: var(--color-honey);
-  --accent-deep: var(--color-honey-deep);
-  --accent-wash: var(--color-honey-wash);
+  --accent: #1F3B33;
+  --accent-deep: #1F3B33;
+  --accent-wash: #EEF5F1;
+  --dm-forest: #1F3B33;
+  --dm-forest-2: #2E5248;
+  --dm-forest-text: #D3E2DB;
+  --dm-forest-mute: #A9C2B8;
+  --dm-hearth: #F2B66D;
+  --dm-pulse: #E08A2E;
+  --dm-air: #EEF1EE;
+  --dm-line: #E6EBE8;
+  --color-mute: #4F6159;
+  --color-ink: #17231F;
+  background: var(--dm-air);
+  color: var(--color-ink);
+  font-family: Onest, "Golos Text", system-ui, sans-serif;
 }
+[data-product="domovoy"] .panel { border: 0; border-radius: 24px; }
+[data-product="domovoy"] main h1 { font-family: Unbounded, Onest, sans-serif; font-weight: 700; letter-spacing: -0.015em; }
+.font-display { font-family: Unbounded, Onest, sans-serif; }
 
 html { background: var(--color-stone-50); }
 body {
