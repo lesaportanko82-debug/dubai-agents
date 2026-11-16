@@ -4,6 +4,7 @@ import { t, type Key } from '@/lib/i18n';
 import { NavLink } from './NavLink';
 import { DomovoyNav } from './domovoy/DomovoyNav';
 import { panelContext } from '@/lib/domovoy-server';
+import { OwedRoleBox } from './owed/RoleBox';
 
 const DM_ICON: Record<string, 'circle' | 'list' | 'people' | 'shield' | 'wallet' | 'home' | 'scale' | 'chart' | 'spark' | 'chat'> = {
   '/domovoy': 'circle', '/domovoy/tasks': 'list', '/domovoy/family': 'people', '/domovoy/approvals': 'shield',
@@ -69,11 +70,15 @@ const NAV: Record<Product, { href: string; key: Key }[]> = {
   ],
   owed: [
     { href: '/owed', key: 'o_home' },
+    { href: '/owed/intake', key: 'o_intake' },
     { href: '/owed/cases', key: 'o_cases' },
     { href: '/owed/review', key: 'o_review' },
     { href: '/owed/batches', key: 'o_batches' },
-    { href: '/owed/packs', key: 'o_packs' },
-    { href: '/owed/intake', key: 'o_intake' },
+    { href: '/owed/factories', key: 'o_factories' },
+    { href: '/owed/contracts', key: 'o_contracts' },
+    { href: '/owed/deliveries', key: 'o_deliveries' },
+    { href: '/owed/claims', key: 'o_packs' },
+    { href: '/owed/audit', key: 'o_audit' },
   ],
 };
 
@@ -118,6 +123,7 @@ export async function Shell({ product, children }: { product: Product; children:
             <NavLink key={n.href} href={n.href} label={t(lang, n.key)} exact={n.href === `/${product}`} />
           ))}
         </nav>
+        {product === 'owed' && <OwedRoleBox lang={lang} />}
       </aside>
 
       <main className="px-5 md:px-10 py-7 max-w-[1240px] w-full">{children}</main>

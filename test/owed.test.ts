@@ -32,7 +32,7 @@ test('attribution tolerates Cyrillic look-alikes, missing dash and phonetic typi
 });
 
 test('attribution: single-batch SKU and unknown SKU', () => {
-  assert.equal(attributeBatch(DEMO_BATCHES, 'KT-550').method, 'sku_single_batch');
+  assert.equal(attributeBatch(DEMO_BATCHES, 'FL-30').method, 'sku_single_batch');
   assert.equal(attributeBatch(DEMO_BATCHES, 'ZZ-1').method, 'none');
 });
 
@@ -46,7 +46,11 @@ test('decide: only manufacturing + batch + warranty is recoverable', () => {
   assert.equal(decide({ defectClass: 'manufacturing', confidence: 0.9, attribution: 'serial', hasBatch: true }).status, 'evidenced');
   assert.equal(decide({ defectClass: 'installation', confidence: 0.9, attribution: 'serial', hasBatch: true }).status, 'not_recoverable');
   assert.equal(decide({ defectClass: 'manufacturing', confidence: 0.5, attribution: 'serial', hasBatch: true }).status, 'needs_review');
-  assert.equal(decide({ defectClass: 'manufacturing', confidence: 0.9, attribution: 'sku_latest_batch_guess', hasBatch: true }).status, 'needs_review');
+  // level C (several factories possible) never reaches a claim — analytics only
+  const c = decide({ defectClass: 'manufacturing', confidence: 0.9, attribution: 'sku_latest_batch_guess', hasBatch: true });
+  assert.equal(c.status, 'analytics_only');
+  assert.equal(c.recoverable, false);
+  assert.equal(decide({ defectClass: 'manufacturing', confidence: 0.9, attribution: 'none', hasBatch: false }).status, 'awaiting_label');
   const out = decide({ defectClass: 'manufacturing', confidence: 0.95, attribution: 'serial', hasBatch: true, withinFactoryWarranty: false });
   assert.equal(out.recoverable, false);
 });
@@ -70,7 +74,7 @@ function mkCase(batchCode: string, cls: DefectCase['defectClass'], i: number): D
   const b = DEMO_BATCHES.find(x => x.code === batchCode)!;
   return {
     id: `c-${batchCode}-${i}`, channel: 'test', receivedAt: '2026-09-10T10:00:00Z', sku: b.sku, batchId: b.id, supplierId: b.supplierId,
-    attribution: 'serial', description: 'leak', defectClass: cls, confidence: 0.9, reasoning: 'x',
+    attribution: 'serial', level: 'A', description: 'leak', defectClass: cls, confidence: 0.9, reasoning: 'x',
     cost: computeCaseCost(b), recoverable: cls === 'manufacturing', needsReview: false, reviewReasons: [], status: cls === 'manufacturing' ? 'evidenced' : 'not_recoverable',
   };
 }

@@ -1,131 +1,116 @@
 import Link from 'next/link';
-import { owedState } from '@/lib/owed-server';
 import { getLang } from '@/lib/lang';
-import { Bar, Money, PageTitle, Panel, Pill } from '@/components/ui';
+import { owedView } from '@/lib/owed-view';
+import { PageTitle, Panel, Bar } from '@/components/ui';
+import { BAND, Stat, money } from '@/components/owed/Bits';
 
 export const dynamic = 'force-dynamic';
 
-export default async function LedgerPage() {
+export default async function OverviewPage() {
   const lang = await getLang();
   const ru = lang === 'ru';
-  const { store } = owedState();
-  const [suppliers, cases, batches] = await Promise.all([store.suppliers(), store.cases(), store.batches()]);
-
-  const rows = suppliers.map(s => {
-    const cs = cases.filter(c => c.supplierId === s.id);
-    const sum = (f: (c: (typeof cs)[number]) => boolean) => cs.filter(f).reduce((a, c) => a + c.cost.total, 0);
-    return {
-      s,
-      open: sum(c => ['evidenced', 'claimed', 'offered'].includes(c.status)),
-      review: sum(c => c.status === 'needs_review'),
-      recovered: sum(c => c.status === 'recovered'),
-      cases: cs.length,
-      recoverable: cs.filter(c => c.recoverable).length,
-      batches: batches.filter(b => b.supplierId === s.id).length,
-    };
-  });
-  const max = Math.max(...rows.map(r => r.open + r.review + r.recovered), 1);
-  const totalOpen = rows.reduce((a, r) => a + r.open, 0);
-  const totalReview = rows.reduce((a, r) => a + r.review, 0);
-  const totalRecovered = rows.reduce((a, r) => a + r.recovered, 0);
-  const writtenOffShare = cases.length ? Math.round((100 * cases.filter(c => !c.recoverable).length) / cases.length) : 0;
+  const v = await owedView();
+  const sum = (f: (r: (typeof v.rows)[number]) => number) => v.rows.reduce((a, r) => a + f(r), 0);
+  const f = v.funnel;
+  const steps = [
+    { n: f.total, ru: 'Всего сообщений', en: 'All messages', note: ru ? 'маркетплейсы, рекламации, СЦ' : 'marketplace, reclamations, SC' },
+    { n: f.unique, ru: 'Без дублей', en: 'Without duplicates', note: ru ? 'один дефект = один случай' : 'one defect = one case' },
+    { n: f.confirmed, ru: 'Подтверждено', en: 'Confirmed', note: ru ? 'производственный брак' : 'manufacturing defect' },
+    { n: f.ab, ru: 'Уровень A/B', en: 'Level A/B', note: ru ? 'можно в претензию' : 'claimable' },
+  ];
+  const max = Math.max(...v.rows.map(r => r.claimable + r.inFlight + r.recovered + r.reviewSum), 1);
 
   return (
     <>
       <PageTitle
-        title={ru ? 'Книга долга заводов' : 'Factory debt ledger'}
-        lead={ru ? 'Сколько заводы должны за производственный брак — по доказанным случаям за последние 100 дней.' : 'What each factory owes for manufacturing defects — evidenced cases, last 100 days.'}
+        title={ru ? 'Обзор потерь' : 'Loss overview'}
+        lead={ru
+          ? 'Система контроля качества поставщиков: находит ответственный завод, считает ущерб по договору и доводит претензию до выплаты. Данные демонстрационные: сантехника, вымышленные заводы.'
+          : 'Supplier quality & performance: finds the responsible factory, computes the damage by the contract and drives the claim to payment. Demo data: plumbing, fictional factories.'}
       />
 
-      {/* the ledger itself is the hero */}
       <Panel className="mb-6">
-        <div className="px-5 pt-5 pb-1 flex flex-wrap gap-x-10 gap-y-2 items-baseline">
-          <div>
-            <div className="text-[13px] text-mute">{ru ? 'К предъявлению' : 'Open to claim'}</div>
-            <Money v={totalOpen} className="text-[34px] font-semibold accent-text" />
-          </div>
-          <div>
-            <div className="text-[13px] text-mute">{ru ? 'Ждёт проверки человеком' : 'Awaiting human review'}</div>
-            <Money v={totalReview} className="text-[22px] font-semibold text-warn" />
-          </div>
-          <div>
-            <div className="text-[13px] text-mute">{ru ? 'Уже возвращено' : 'Recovered so far'}</div>
-            <Money v={totalRecovered} className="text-[22px] font-semibold text-ok" />
-          </div>
-          <div className="ml-auto text-[13px] text-mute max-w-[28ch]">
-            {ru ? `${writtenOffShare}% случаев агент отнёс не к заводу (транспорт, монтаж) и не включил в долг.` : `${writtenOffShare}% of cases were not the factory's fault (transport, installation) and are excluded.`}
-          </div>
+        <div className="px-5 py-5 grid gap-6" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))' }}>
+          <Stat label={ru ? 'Прямой ущерб от брака' : 'Direct defect damage'} sub={ru ? 'подтверждённые случаи × себестоимость' : 'confirmed cases × unit cost'}>{money(sum(r => r.direct))}</Stat>
+          <Stat label={ru ? 'Можно предъявить сейчас' : 'Claimable now'} sub={ru ? 'по формулам договоров + штрафы за сроки' : 'by contract formulas + delivery penalties'}><span className="accent-text">{money(sum(r => r.claimable))}</span></Stat>
+          <Stat label={ru ? 'Ждёт проверки человеком' : 'Awaiting human review'} sub={`${sum(r => r.review)} ${ru ? 'случаев' : 'cases'}`}><span className="text-warn">{money(sum(r => r.reviewSum))}</span></Stat>
+          <Stat label={ru ? 'Предъявлено, ждём' : 'Claimed, pending'} sub={v.overdueClaims.length ? (ru ? `${v.overdueClaims.length} без ответа дольше срока` : `${v.overdueClaims.length} past the reply term`) : ' '}>{money(sum(r => r.inFlight))}</Stat>
+          <Stat label={ru ? 'Уже возвращено' : 'Recovered'}><span className="text-ok">{money(sum(r => r.recovered))}</span></Stat>
         </div>
-
-        <ul className="divide-y divide-stone-200 mt-3">
-          {rows.sort((a, b) => b.open - a.open).map(r => (
-            <li key={r.s.id} className="px-5 py-4 grid md:grid-cols-[minmax(220px,1.1fr)_2fr_auto] gap-x-6 gap-y-2 items-center">
-              <div>
-                <div className="font-semibold">
-                  <span className="accent-text mr-2">{r.s.code}</span>
-                  {r.s.name.replace(' (demo)', '')}
-                </div>
-                <div className="text-[13px] text-mute">
-                  {r.cases} {ru ? 'случаев' : 'cases'} · {r.recoverable} {ru ? 'к возврату' : 'recoverable'} · {r.batches} {ru ? 'партии' : 'batches'} · {ru ? 'допуск' : 'allowance'} {r.s.allowedDefectPct}%
-                </div>
-              </div>
-              <div>
-                <Bar
-                  max={max}
-                  parts={[
-                    { v: r.recovered, color: 'var(--color-ok)', label: ru ? 'возвращено' : 'recovered' },
-                    { v: r.open, color: 'var(--accent)', label: ru ? 'к предъявлению' : 'open' },
-                    { v: r.review, color: 'var(--color-warn)', label: ru ? 'на проверке' : 'review' },
-                  ]}
-                />
-                <div className="mt-1.5 flex gap-4 text-[12px] text-mute">
-                  <span><i className="inline-block w-2 h-2 rounded-sm bg-ok mr-1" />{ru ? 'возвращено' : 'recovered'} <b className="num text-ink">{Math.round(r.recovered)}</b></span>
-                  <span><i className="inline-block w-2 h-2 rounded-sm accent-bg mr-1" />{ru ? 'к предъявлению' : 'open'} <b className="num text-ink">{Math.round(r.open)}</b></span>
-                  <span><i className="inline-block w-2 h-2 rounded-sm bg-warn mr-1" />{ru ? 'на проверке' : 'review'} <b className="num text-ink">{Math.round(r.review)}</b></span>
-                </div>
-              </div>
-              <div className="flex md:flex-col gap-2 md:items-end">
-                <Link href={`/owed/packs?supplier=${r.s.code}`} className="rounded-md accent-bg text-white px-3 py-1.5 text-[13px] font-medium hover:opacity-90">
-                  {ru ? 'Собрать пакет' : 'Build pack'}
-                </Link>
-                <Link href={`/owed/cases?supplier=${r.s.code}`} className="text-[13px] text-ink-soft hover:text-ink underline-offset-2 hover:underline">
-                  {ru ? 'Все случаи' : 'All cases'}
-                </Link>
-              </div>
-            </li>
-          ))}
-        </ul>
       </Panel>
 
-      <div className="grid md:grid-cols-2 gap-5">
-        <Panel title={ru ? 'Куда идёт случай' : 'Where a case goes'}>
-          <ol className="px-5 pb-5 text-[14px] space-y-2">
-            {[
-              [ru ? 'Рекламация приходит из Telegram, почты, акта СЦ или отзыва' : 'A complaint arrives from Telegram, email, a service act or a review', 'stone'],
-              [ru ? 'Агент убирает личные данные, находит партию и завод, определяет класс дефекта' : 'The agent masks personal data, finds the batch and factory, classifies the defect', 'accent'],
-              [ru ? 'Код считает стоимость и решает: в долг завода, на проверку или не к возврату' : 'Code computes the cost and decides: factory debt, human review, or not recoverable', 'info'],
-              [ru ? 'Перед заказом агент собирает переговорный пакет, человек одобряет' : 'Before the next order the agent drafts a negotiation pack; a human approves', 'ok'],
-            ].map(([txt, tone], i) => (
-              <li key={i} className="flex gap-3">
-                <Pill tone={tone as 'ok'}>{i + 1}</Pill>
-                <span>{txt}</span>
-              </li>
-            ))}
-          </ol>
+      <div className="grid gap-5 mb-6" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))' }}>
+        <Panel title={ru ? 'Воронка: от сообщений до претензии' : 'Funnel: from messages to a claim'}>
+          <div className="px-5 pb-5">
+            <div className="flex items-end gap-3 h-[170px]" role="img" aria-label={steps.map(s => `${s[lang]} ${s.n}`).join(', ')}>
+              {steps.map((s, i) => (
+                <div key={s.en} className="flex-1 min-w-0 flex flex-col items-center justify-end h-full gap-1.5">
+                  <span className="num font-semibold text-[15px]">{s.n}</span>
+                  <div className="w-full rounded-t-md" style={{ height: `${(100 * s.n) / Math.max(steps[0].n, 1)}%`, background: ['#1F5A87', '#8A949B', '#2BB3E6', '#5FA318'][i] }} />
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-3 mt-2">
+              {steps.map(s => (
+                <div key={s.en} className="flex-1 min-w-0 text-center">
+                  <div className="text-[13px] font-medium leading-tight">{s[lang]}</div>
+                  <div className="text-[11px] text-mute leading-tight">{s.note}</div>
+                </div>
+              ))}
+            </div>
+            <p className="text-[13px] text-mute mt-4 mb-0">{ru ? 'Без дедупликации, атрибуции партии и правильной базы (проданные единицы, а не число жалоб) даже красивый дашборд показал бы неверные цифры.' : 'Without deduplication, batch attribution and the right base (units sold, not complaints) even a nice dashboard would show wrong numbers.'}</p>
+          </div>
         </Panel>
-        <Panel title={ru ? 'Последние случаи' : 'Latest cases'}>
-          <ul className="px-5 pb-4 divide-y divide-stone-100">
-            {[...cases].sort((a, b) => b.receivedAt.localeCompare(a.receivedAt)).slice(0, 6).map(c => (
-              <li key={c.id} className="py-2 flex items-center gap-3 text-[14px]">
-                <span className="num text-mute w-[104px] shrink-0 whitespace-nowrap">{c.receivedAt.slice(5, 10)} {c.receivedAt.slice(11, 16)}</span>
-                <span className="font-medium w-[64px] shrink-0">{c.sku}</span>
-                <span className="truncate text-ink-soft">{c.description}</span>
-                <Money v={c.cost.total} className="ml-auto shrink-0" />
+
+        <Panel title={ru ? `Риск-флаги · ${v.flags.length}` : `Risk flags · ${v.flags.length}`}>
+          <ul className="px-5 pb-5 space-y-2.5">
+            {v.flags.length === 0 && <li className="text-mute">{ru ? 'Флагов нет.' : 'No flags.'}</li>}
+            {v.flags.map((fl, i) => (
+              <li key={i} className="flex gap-3 items-start text-[14px]">
+                <span aria-hidden="true" className="mt-1.5 w-2.5 h-2.5 rounded-full shrink-0" style={{ background: fl.kind === 'over_allowance' || fl.kind === 'claim_sla' ? '#C2412D' : '#E08A2E' }} />
+                <span className="min-w-0 flex-1">{fl.text[lang]}</span>
+                <Link className="text-[12px] underline underline-offset-2 text-mute whitespace-nowrap" href={fl.kind === 'claim_sla' ? '/owed/claims' : fl.kind.startsWith('late') || fl.kind === 'delay_growing' ? '/owed/deliveries' : '/owed/batches'}>{ru ? 'открыть' : 'open'}</Link>
               </li>
             ))}
           </ul>
         </Panel>
       </div>
+
+      <Panel title={ru ? 'Книга долга и рейтинг заводов' : 'Debt ledger and factory score'}>
+        <ul className="divide-y divide-stone-200">
+          {v.rows.map(r => (
+            <li key={r.s.id} className="px-5 py-4 grid gap-4 items-center md:grid-cols-[minmax(0,1.4fr)_minmax(0,2fr)_auto]">
+              <div className="min-w-0">
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <Link href={`/owed/factories/${r.s.code}`} className="font-semibold hover:underline">{r.s.code}</Link>
+                  <span className="text-[14px] truncate">{r.s.name}</span>
+                </div>
+                <div className="text-[12px] text-mute mt-0.5">{r.cases} {ru ? 'случаев' : 'cases'} · {r.lines.length} {ru ? 'партий' : 'batches'} · {ru ? 'опоздание' : 'delay'} {r.ds.avgDelay} {ru ? 'дн.' : 'd'}{!r.contractReady && <span className="text-warn"> · {ru ? 'договор не разобран' : 'contract not analysed'}</span>}</div>
+              </div>
+              <div className="min-w-0">
+                <Bar max={max} parts={[
+                  { v: r.recovered, color: 'var(--color-verdigris)', label: ru ? 'возвращено' : 'recovered' },
+                  { v: r.inFlight, color: 'var(--color-info)', label: ru ? 'предъявлено' : 'claimed' },
+                  { v: r.claimable, color: 'var(--accent)', label: ru ? 'к предъявлению' : 'claimable' },
+                  { v: r.reviewSum, color: 'var(--color-warn)', label: ru ? 'на проверке' : 'in review' },
+                ]} />
+                <div className="mt-1.5 text-[12px] text-mute flex flex-wrap gap-x-3">
+                  <span>{ru ? 'возвращено' : 'recovered'} {money(r.recovered)}</span>
+                  <span>{ru ? 'предъявлено' : 'claimed'} {money(r.inFlight)}</span>
+                  <span>{ru ? 'к предъявлению' : 'claimable'} {money(r.claimable)}</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-3 justify-end">
+                <div className="text-right">
+                  <div className="num text-[22px] font-semibold leading-none" style={{ color: BAND[r.score.band].color }}>{r.score.total}</div>
+                  <div className="text-[11px] text-mute">{ru ? 'рейтинг' : 'score'}</div>
+                </div>
+                {r.claimable > 0 && <Link href={`/owed/claims?supplier=${r.s.code}`} className="rounded-md accent-bg text-white px-3 py-1.5 text-[13px] font-medium whitespace-nowrap">{ru ? 'Претензия' : 'Claim'}</Link>}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </Panel>
     </>
   );
 }

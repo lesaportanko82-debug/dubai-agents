@@ -1,76 +1,94 @@
-import { owedState } from '@/lib/owed-server';
+import Link from 'next/link';
 import { getLang } from '@/lib/lang';
-import { detectSpikes } from '@core/owed/tools/spikes';
-import { PageTitle, Panel, Pill } from '@/components/ui';
+import { owedView } from '@/lib/owed-view';
+import { PageTitle, Panel } from '@/components/ui';
+import { RateBar, money, date } from '@/components/owed/Bits';
+import { DEFECT_RU, directDamage } from '@core/owed/sqpm';
+import { PRODUCTS } from '@core/owed/fixtures';
 
 export const dynamic = 'force-dynamic';
 
 export default async function BatchesPage() {
   const lang = await getLang();
   const ru = lang === 'ru';
-  const { store } = owedState();
-  const [suppliers, batches, cases] = await Promise.all([store.suppliers(), store.batches(), store.cases()]);
-  const rates = detectSpikes(batches, suppliers, cases).sort((a, b) => b.pct - a.pct);
-  const maxPct = Math.max(...rates.map(r => Math.max(r.pct, r.allowedPct)), 0.1);
-  const alerts = rates.filter(r => r.alert);
+  const v = await owedView();
+  const all = v.rows.flatMap(r => r.lines.map(x => ({ ...x, s: r.s, contract: r.contract })));
+  const skus = Array.from(new Set(all.map(x => x.b.sku))).sort();
+  const over = all.filter(x => x.line.overAllowance);
+  const maxPct = Math.max(4, ...all.map(x => x.line.pct * 1.15), ...all.map(x => x.line.allowedPct * 1.3));
+
+  const topDefect = (batchId: string) => {
+    const m = new Map<string, number>();
+    for (const c of v.cases.filter(c => c.batchId === batchId && c.defectClass === 'manufacturing' && c.defectCode)) m.set(c.defectCode!, (m.get(c.defectCode!) ?? 0) + 1);
+    return [...m.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  };
 
   return (
     <>
       <PageTitle
-        title={ru ? 'Партии и всплески брака' : 'Batches & defect spikes'}
-        lead={ru ? 'Доля производственного брака по каждой партии против допуска в контракте и против других партий того же артикула. Всплеск означает: инспекция следующей поставки и пункт в переговорный пакет.' : 'Manufacturing-defect rate per batch vs the contract allowance and vs other batches of the same SKU. A spike means: inspect the next shipment and add a clause to the negotiation pack.'}
+        title={ru ? 'Качество партий' : 'Batch quality'}
+        lead={ru
+          ? '% брака = подтверждённые дефекты (уровни A/B) / проданные единицы партии — а не число жалоб. Порог — из договора конкретного завода, со ссылкой на пункт.'
+          : 'Defect rate = confirmed defects (levels A/B) / units sold from the batch — not the number of complaints. The allowance comes from that factory’s contract, with its clause.'}
       />
 
-      {alerts.length > 0 && (
-        <div className="mb-5 rounded-card border border-warn/40 bg-warn-wash px-5 py-4">
-          <div className="font-semibold text-warn mb-1">{ru ? `Внимание: ${alerts.length} ${alerts.length === 1 ? 'партия' : 'партии'} выше нормы` : `Attention: ${alerts.length} ${alerts.length === 1 ? 'batch' : 'batches'} above the norm`}</div>
-          <ul className="text-[14px] space-y-1">
-            {alerts.map(a => (
-              <li key={a.batch.id}>
-                <b>{a.batch.code}</b> ({a.batch.sku}, {a.supplier.code}): {a.alertReason}.{' '}
-                <span className="text-ink-soft">{ru ? 'Черновик чек-листа инспекции: тест на протечку картриджа, контроль покрытия, проверка резьбы на 100% образцов AQL 1.0.' : 'Inspection checklist draft: cartridge leak test, coating check, thread gauge on AQL 1.0 samples.'}</span>
-              </li>
-            ))}
+      {over.length > 0 && (
+        <div className="mb-6 rounded-card border border-amber-300 bg-amber-50/70 px-5 py-4 text-[14px]">
+          <div className="font-semibold mb-2">{ru ? `Выше договорного порога: ${over.length} ${over.length === 1 ? 'партия' : 'партии'}` : `Above the contract allowance: ${over.length}`}</div>
+          <ul className="space-y-2">
+            {over.map(x => {
+              const code = topDefect(x.b.id);
+              return (
+                <li key={x.b.id}>
+                  <b>{x.b.code}</b> ({x.b.sku}, {x.s.code}): {x.line.pct}% {ru ? 'при допуске' : 'vs'} {x.line.allowedPct}% ({ru ? 'п.' : 'cl.'} {x.line.clauseRef ?? '—'}) · {ru ? 'прямой ущерб' : 'direct damage'} {x.line.cases} × ${x.b.unitCost} = <b>{money(directDamage(x.b, x.line.cases))}</b>.{' '}
+                  <span className="text-mute">{ru ? 'Черновик чек-листа инспекции следующей поставки' : 'Draft inspection checklist for the next shipment'}: {code ? (ru ? `проверка «${DEFECT_RU[code]}», ` : `check "${code}", `) : ''}{ru ? 'тест на протечку под давлением, контроль покрытия и резьбы на 100% образцов AQL 1.0.' : 'pressure leak test, coating and thread control on 100% of AQL 1.0 samples.'}</span>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
 
-      <Panel>
-        <table className="w-full text-[14px]">
-          <thead className="text-[12px] text-mute">
-            <tr className="border-b border-stone-200">
-              <th className="text-left font-medium px-5 py-3">{ru ? 'Партия' : 'Batch'}</th>
-              <th className="text-left font-medium py-3">{ru ? 'Артикул' : 'SKU'}</th>
-              <th className="text-left font-medium py-3">{ru ? 'Завод' : 'Factory'}</th>
-              <th className="text-right font-medium py-3">{ru ? 'Отгружено' : 'Shipped'}</th>
-              <th className="text-right font-medium py-3">{ru ? 'Штук' : 'Qty'}</th>
-              <th className="text-right font-medium py-3">{ru ? 'Произв. брак' : 'Mfg cases'}</th>
-              <th className="text-left font-medium py-3 pl-6 w-[34%]">{ru ? 'Доля брака vs допуск' : 'Rate vs allowance'}</th>
-              <th className="text-right font-medium py-3 pr-5">{ru ? 'К базовой' : 'vs baseline'}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rates.map(r => (
-              <tr key={r.batch.id} className="border-b border-stone-100 last:border-0">
-                <td className="px-5 py-3 font-semibold">{r.batch.code}{r.alert && <Pill tone="warn">!</Pill>}</td>
-                <td className="py-3">{r.batch.sku}</td>
-                <td className="py-3 accent-text font-medium">{r.supplier.code}</td>
-                <td className="py-3 text-right num text-mute">{r.batch.shippedAt}</td>
-                <td className="py-3 text-right num">{r.batch.qty.toLocaleString('en-US')}</td>
-                <td className="py-3 text-right num">{r.manufacturingCases}</td>
-                <td className="py-3 pl-6">
-                  <div className="relative h-3 rounded-sm bg-stone-100">
-                    <div className="absolute inset-y-0 left-0 rounded-sm" style={{ width: `${(100 * r.pct) / maxPct}%`, background: r.alert ? 'var(--color-warn)' : 'var(--accent)' }} />
-                    <div className="absolute -top-1 -bottom-1 w-px bg-ink" style={{ left: `${(100 * r.allowedPct) / maxPct}%` }} title={`${ru ? 'допуск' : 'allowance'} ${r.allowedPct}%`} />
-                  </div>
-                  <div className="text-[12px] text-mute mt-1 num">{r.pct}% · {ru ? 'допуск' : 'allowance'} {r.allowedPct}%</div>
-                </td>
-                <td className="py-3 pr-5 text-right num">{r.vsSkuBaseline === null ? '—' : `${r.vsSkuBaseline}×`}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Panel>
+      {skus.map(sku => {
+        const rows = all.filter(x => x.b.sku === sku).sort((a, b) => a.b.shippedAt.localeCompare(b.b.shippedAt));
+        const factories = Array.from(new Set(rows.map(x => x.s.code)));
+        return (
+          <Panel key={sku} className="mb-5" title={`${sku} · ${PRODUCTS[sku]?.[lang] ?? ''}`} aside={factories.length > 1 ? <span className="text-[12px] rounded-md px-2 py-0.5 bg-info-wash text-info font-medium">{ru ? `делают ${factories.length} завода: ${factories.join(', ')}` : `made by ${factories.length} factories: ${factories.join(', ')}`}</span> : undefined}>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-[14px]">
+                <thead className="text-[12px] text-mute text-left">
+                  <tr className="border-b border-stone-200">
+                    <th className="px-5 py-2 font-medium">{ru ? 'Партия' : 'Batch'}</th>
+                    <th className="px-2 py-2 font-medium">{ru ? 'Завод' : 'Factory'}</th>
+                    <th className="px-2 py-2 font-medium">{ru ? 'Отгружено' : 'Shipped'}</th>
+                    <th className="px-2 py-2 font-medium text-right">{ru ? 'Закуплено / продано' : 'Bought / sold'}</th>
+                    <th className="px-2 py-2 font-medium text-right">{ru ? 'Подтв. брак' : 'Confirmed'}</th>
+                    <th className="px-2 py-2 font-medium w-[34%]">{ru ? 'Доля брака и допуск по договору' : 'Rate vs contract allowance'}</th>
+                    <th className="px-5 py-2 font-medium text-right">{ru ? 'Прямой ущерб' : 'Direct damage'}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(x => (
+                    <tr key={x.b.id} className="border-b border-stone-100 last:border-0">
+                      <td className="px-5 py-3 font-semibold"><Link className="hover:underline" href={`/owed/cases?batch=${x.b.code}`}>{x.b.code}</Link>{x.line.overAllowance && <span className="ml-1.5 text-bad" title={ru ? 'выше нормы' : 'over'}>●</span>}</td>
+                      <td className="px-2 py-3"><Link className="hover:underline" href={`/owed/factories/${x.s.code}`}>{x.s.code}</Link></td>
+                      <td className="px-2 py-3 num">{date(x.b.shippedAt)}</td>
+                      <td className="px-2 py-3 num text-right">{x.b.qty.toLocaleString('en-US')} / {(x.b.soldUnits ?? x.b.qty).toLocaleString('en-US')}</td>
+                      <td className="px-2 py-3 num text-right">{x.line.cases}</td>
+                      <td className="px-2 py-3">
+                        <RateBar pct={x.line.pct} allowed={x.line.allowedPct} max={maxPct} />
+                        <div className="text-[12px] text-mute mt-1 num">{x.line.pct}% · {ru ? 'допуск' : 'allowed'} {x.line.allowedPct}% ({ru ? 'п.' : 'cl.'} {x.line.clauseRef ?? '—'})</div>
+                      </td>
+                      <td className="px-5 py-3 num text-right">{money(directDamage(x.b, x.line.cases))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+        );
+      })}
+      <p className="text-[12px] text-mute">{ru ? 'Прямой ущерб — подтверждённые дефекты × себестоимость. Сумма претензии считается отдельно по формуле договора (все случаи или только сверх порога, плюс логистика и сервис).' : 'Direct damage = confirmed defects × unit cost. The claim amount follows the contract formula (all cases or only those above the allowance, plus logistics and service).'}</p>
     </>
   );
 }
