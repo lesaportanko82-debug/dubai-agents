@@ -131,3 +131,14 @@ test('agent loop: invalid tool input becomes an error result, not a crash', asyn
   assert.ok((res.trace[0].output as any).error);
   assert.equal((await store.cases()).length, 0);
 });
+
+test('agent loop: a serial the customer never gave is ignored — the model cannot upgrade a case to level A', async () => {
+  const store = new InMemoryStore(DEMO_SUPPLIERS, DEMO_BATCHES);
+  const client = scripted([
+    { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 't1', name: 'record_case', input: { sku: 'MX-210', serial: 102311, description: 'Cartridge leaks after two months of normal use', defect_class: 'manufacturing', confidence: 0.9, reasoning: 'guessed serial' } }] },
+    { stop_reason: 'end_turn', content: [{ type: 'text', text: 'ok' }] },
+  ]);
+  const res = await runIntake(client, store, 'MX-210 течёт через два месяца', { channel: 'test', receivedAt: '2026-09-10T10:00:00Z' });
+  assert.equal(res.case?.serial, undefined);
+  assert.notEqual(res.case?.level, 'A');
+});

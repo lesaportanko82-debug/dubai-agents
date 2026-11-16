@@ -5,6 +5,7 @@ import { PageTitle, Panel } from '@/components/ui';
 import { TOPIC } from '@/components/owed/topics';
 import { analyseContract, clauseAction } from '../actions';
 import { date } from '@/components/owed/Bits';
+import { PendingButton } from '@/components/owed/PendingButton';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -66,7 +67,7 @@ export default async function ContractsPage({ searchParams }: { searchParams: Pr
                 <div className="px-5 pb-5 text-[14px]">
                   <p className="m-0 mb-3 text-warn">{ru ? 'Нет подтверждённых условий — для этого завода расчёты идут по умолчанию.' : 'No confirmed terms — defaults apply for this factory.'}</p>
                   <form action={analyseContract}><input type="hidden" name="id" value={ct.id} />
-                    <button className="rounded-md accent-bg text-white px-4 py-2 text-[14px] font-medium disabled:opacity-50" disabled={!may}>{ru ? 'Запустить AI-анализ договора' : 'Run AI contract analysis'}</button>
+                    <PendingButton className="rounded-md accent-bg text-white px-4 py-2 text-[14px] font-medium disabled:opacity-50" disabled={!may} pending={ru ? 'AI читает договор… ~30 с' : 'AI is reading the contract… ~30 s'}>{ru ? 'Запустить AI-анализ договора' : 'Run AI contract analysis'}</PendingButton>
                   </form>
                   {!may && <p className="text-[12px] text-mute mt-2">{ru ? 'Нужна роль «Закупщик» или «Руководство».' : 'Requires Buyer or Management.'}</p>}
                 </div>
@@ -102,7 +103,7 @@ export default async function ContractsPage({ searchParams }: { searchParams: Pr
             )}
             {confirmed.length > 0 && (
               <form action={analyseContract}><input type="hidden" name="id" value={ct.id} />
-                <button className="text-[13px] underline underline-offset-2 text-mute disabled:opacity-50" disabled={!may}>{ru ? 'Проверить договор агентом ещё раз' : 'Re-run the AI analysis'}</button>
+                <PendingButton className="text-[13px] underline underline-offset-2 text-mute disabled:opacity-50" disabled={!may} pending={ru ? 'AI читает договор…' : 'AI is reading…'}>{ru ? 'Проверить договор агентом ещё раз' : 'Re-run the AI analysis'}</PendingButton>
               </form>
             )}
           </div>

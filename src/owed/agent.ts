@@ -165,6 +165,15 @@ export async function runIntake(client: ModelClient, store: Store, rawText: stri
   return { summary: 'Stopped: step limit reached; case sent to human review.', case: recorded, duplicate, merged, trace, redactions: removed };
 
   /* ---------- tool executors ---------- */
+  /** Level A needs a serial / batch code the customer actually gave: drop ones the model did not read in the complaint. */
+  function grounded<T extends { serial?: number; label_batch_code?: string }>(q: T): T {
+    const flat = rawText.toUpperCase().replace(/\s+/g, '');
+    const out = { ...q };
+    if (out.serial != null && !flat.includes(String(out.serial))) out.serial = undefined;
+    if (out.label_batch_code && !flat.includes(out.label_batch_code.toUpperCase().replace(/\s+/g, ''))) out.label_batch_code = undefined;
+    return out;
+  }
+
   async function execTool(name: string, input: unknown): Promise<unknown> {
     const settings = await store.settings();
 
@@ -176,7 +185,7 @@ export async function runIntake(client: ModelClient, store: Store, rawText: stri
     }
 
     if (name === 'find_batch') {
-      const q = FindBatchIn.parse(input);
+      const q = grounded(FindBatchIn.parse(input));
       const [batches, suppliers, orders] = await Promise.all([store.batches(), store.suppliers(), store.orders()]);
       const a = attributeCase({ batches, orders }, { sku: q.sku, serial: q.serial, orderNo: q.order_no, labelBatchCode: q.label_batch_code });
       const s = a.batch ? suppliers.find(x => x.id === a.batch!.supplierId) : undefined;
@@ -194,7 +203,7 @@ export async function runIntake(client: ModelClient, store: Store, rawText: stri
 
     if (name === 'record_case') {
       if (recorded) throw new Error('record_case already called for this complaint');
-      const inp = RecordCaseIn.parse(input);
+      const inp = grounded(RecordCaseIn.parse(input));
       const [batches, suppliers, orders, cases] = await Promise.all([store.batches(), store.suppliers(), store.orders(), store.cases()]);
       const order = inp.order_no ? orders.find(o => o.orderNo.toUpperCase() === inp.order_no!.toUpperCase()) : undefined;
       const source = sourceOf(opts.channel);

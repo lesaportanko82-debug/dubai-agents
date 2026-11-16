@@ -8,6 +8,7 @@ import { TOPIC } from '@/components/owed/topics';
 import { CLAIM_FLOW, slaOverdue } from '@core/owed/sqpm';
 import type { Claim, ClaimStatus } from '@core/owed/types';
 import { buildClaim, claimAction, rewriteLetters } from '../actions';
+import { PendingButton } from '@/components/owed/PendingButton';
 
 export const maxDuration = 60;
 
@@ -55,7 +56,7 @@ export default async function ClaimsPage({ searchParams }: { searchParams: Promi
             </select></label>
           <label className="flex flex-col gap-1"><span className="text-[13px] text-mute">{ru ? 'С' : 'From'}</span><input type="date" name="from" defaultValue={from} className="rounded-md border border-stone-300 bg-paper px-2 py-1.5" /></label>
           <label className="flex flex-col gap-1"><span className="text-[13px] text-mute">{ru ? 'По' : 'To'}</span><input type="date" name="to" defaultValue={to} className="rounded-md border border-stone-300 bg-paper px-2 py-1.5" /></label>
-          <button className="rounded-md accent-bg text-white px-4 py-2 font-medium disabled:opacity-50" disabled={v.role !== 'buyer' && v.role !== 'quality'}>{ru ? 'Собрать претензию' : 'Build the claim'}</button>
+          <PendingButton className="rounded-md accent-bg text-white px-4 py-2 font-medium disabled:opacity-50" disabled={v.role !== 'buyer' && v.role !== 'quality'} pending={ru ? 'Собираю дело и пишу письма…' : 'Building the case and letters…'}>{ru ? 'Собрать претензию' : 'Build the claim'}</PendingButton>
           <span className="text-[13px] text-mute max-w-[46ch]">{v.role !== 'buyer' && v.role !== 'quality' ? (ru ? `Вы — ${ROLE_LABEL[v.role].ru}. Собирает закупщик или качество.` : `You are ${ROLE_LABEL[v.role].en}.`) : (ru ? 'Только случаи уровня A/B, партии выше порога, ещё не предъявленные. Письма пишет агент.' : 'Only level A/B cases of batches over the allowance, not yet claimed. The agent writes the letters.')}</span>
         </form>
       </Panel>
@@ -198,7 +199,7 @@ function ClaimCard({ c, lang, v, supName, supCode, error }: { c: Claim; lang: 'r
           {['draft', 'reviewed'].includes(c.status) && (
             <form action={rewriteLetters} className="flex items-center gap-2 text-[13px]">
               <input type="hidden" name="id" value={c.id} />
-              <button className="underline underline-offset-2 disabled:opacity-40" disabled={v.role !== 'buyer' && v.role !== 'quality'}>{c.letters.source === 'model' ? (ru ? 'Переписать письмо агентом' : 'Rewrite with the agent') : (ru ? 'Написать письмо агентом (сейчас шаблон)' : 'Write with the agent (template now)')}</button>
+              <PendingButton className="underline underline-offset-2 disabled:opacity-40" disabled={v.role !== 'buyer' && v.role !== 'quality'} pending={ru ? 'Агент пишет письма…' : 'The agent is writing…'}>{c.letters.source === 'model' ? (ru ? 'Переписать письмо агентом' : 'Rewrite with the agent') : (ru ? 'Написать письмо агентом (сейчас шаблон)' : 'Write with the agent (template now)')}</PendingButton>
               <span className="text-mute">{ru ? 'до минуты' : 'up to a minute'}</span>
             </form>
           )}
