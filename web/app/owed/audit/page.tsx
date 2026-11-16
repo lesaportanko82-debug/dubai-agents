@@ -44,7 +44,7 @@ export default async function AuditPage() {
               <li key={i} className="px-5 py-2.5 grid gap-1 md:grid-cols-[150px_140px_minmax(0,1fr)]">
                 <span className="num text-mute text-[13px]">{e.at.slice(0, 16).replace('T', ' ')}</span>
                 <span className={e.actor === 'agent' ? 'text-info' : 'font-medium'}>{who(e.actor)}</span>
-                <span className="min-w-0">{ACTION[e.action]?.[lang] ?? e.action}{e.details ? <span className="text-mute text-[13px]"> · {Object.entries(e.details).filter(([, v]) => v != null && typeof v !== 'object').map(([k, v]) => `${k}: ${v}`).join(', ')}</span> : null}</span>
+                <span className="min-w-0">{ACTION[e.action]?.[lang] ?? e.action}{e.details ? <span className="text-mute text-[13px]"> · {Object.entries(e.details).filter(([k, v]) => v != null && typeof v !== 'object' && k !== 'raw').map(([k, v]) => `${k}: ${v}`).join(', ')}</span> : null}</span>
               </li>
             ))}
           </ul>

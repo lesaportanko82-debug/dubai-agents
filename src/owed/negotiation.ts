@@ -133,16 +133,24 @@ export function templateLetters(c: Claim, s: Supplier): Claim['letters'] {
  * AI contract analysis. The model proposes clauses; code keeps only those quoted word for word,
  * with the reference and the number present in the contract. A person confirms them before they count.
  */
-export async function extractContract(client: ModelClient, contract: Contract, model = defaultModel()): Promise<{ accepted: ContractClause[]; rejected: { topic: string; ref: string; reason: string }[] }> {
-  const res = await client.create({ model, max_tokens: 2000, system: CONTRACT_SYSTEM, tools: [], messages: [{ role: 'user', content: `Contract:\n${contract.text}` }] });
-  const j = parseJson(res.content.filter(b => b.type === 'text').map(b => (b as any).text).join(''));
+export async function extractContract(client: ModelClient, contract: Contract, model = defaultModel()): Promise<{ accepted: ContractClause[]; rejected: { topic: string; ref: string; reason: string }[]; raw?: string }> {
+  const res = await client.create({ model, max_tokens: 3000, system: CONTRACT_SYSTEM, tools: [], messages: [{ role: 'user', content: `Contract:\n${contract.text}\n\nReturn only the JSON object.` }] });
+  const text = res.content.filter(b => b.type === 'text').map(b => (b as any).text).join('');
+  let items: any[] = [];
+  try {
+    const t = text.trim();
+    const j = t.startsWith('[') ? JSON.parse(t.slice(0, t.lastIndexOf(']') + 1)) : parseJson(t);
+    items = Array.isArray(j) ? j : Array.isArray(j.clauses) ? j.clauses : Array.isArray(j.terms) ? j.terms : Array.isArray(j.items) ? j.items : Object.values(j).find(Array.isArray) as any[] ?? [];
+  } catch { items = []; }
   const accepted: ContractClause[] = [];
   const rejected: { topic: string; ref: string; reason: string }[] = [];
-  for (const raw of Array.isArray(j.clauses) ? j.clauses : []) {
+  if (!items.length) return { accepted, rejected: [{ topic: '-', ref: '-', reason: 'the model returned no clauses' }], raw: text.slice(0, 400) };
+  for (const raw of items) {
     const topic = String(raw.topic) as ClauseTopic;
     const ref = String(raw.ref ?? '').replace(/^(clause|п\.)\s*/i, '').trim();
-    const quote = String(raw.quote ?? '').replace(/^\s*\d+(\.\d+)*\s+/, '').trim();
-    const value = raw.value == null || raw.value === '' ? undefined : Number(raw.value);
+    const quote = String(raw.quote ?? raw.text ?? '').replace(/^\s*\d+(\.\d+)*\s+/, '').replace(/^["«“]|["»”]$/g, '').trim();
+    const num = typeof raw.value === 'string' ? Number(String(raw.value).replace(',', '.').replace(/[^\d.]/g, '')) : raw.value;
+    const value = num == null || num === '' || !Number.isFinite(Number(num)) ? undefined : Number(num);
     if (!TOPICS.includes(topic)) { rejected.push({ topic, ref, reason: 'unknown topic' }); continue; }
     const v = verifyClause(contract.text, { ref, quote, value: Number.isFinite(value) ? value : undefined });
     if (!v.ok) { rejected.push({ topic, ref, reason: v.reason ?? 'not verified' }); continue; }
@@ -150,5 +158,5 @@ export async function extractContract(client: ModelClient, contract: Contract, m
     if (topic === 'compensation_basis' && !basis) { rejected.push({ topic, ref, reason: 'basis not stated' }); continue; }
     accepted.push({ topic, ref, quote, value: Number.isFinite(value) ? value : undefined, sku: raw.sku ? String(raw.sku) : undefined, basis, confirmed: false, extractedBy: 'agent' });
   }
-  return { accepted, rejected };
+  return { accepted, rejected, raw: accepted.length ? undefined : text.slice(0, 400) };
 }

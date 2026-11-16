@@ -144,7 +144,7 @@ export async function analyseContract(formData: FormData) {
   const fresh = res.accepted.filter(n => !keep.some(k => k.ref === n.ref && k.topic === n.topic));
   ct.clauses = [...keep, ...fresh];
   await store.saveContract(ct);
-  await store.audit({ at: nowIso, actor: 'agent', action: 'contract.analysed', entityId: id, details: { accepted: fresh.length, rejected: res.rejected } });
+  await store.audit({ at: nowIso, actor: 'agent', action: 'contract.analysed', entityId: id, details: { accepted: fresh.length, rejected: res.rejected.length, reasons: res.rejected.map(r => `${r.ref}: ${r.reason}`).join('; ').slice(0, 300), raw: res.raw } });
   done();
   redirect(`/owed/contracts?c=${id}&rejected=${res.rejected.length}`);
 }
