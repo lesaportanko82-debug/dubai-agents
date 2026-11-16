@@ -7,7 +7,9 @@ import { ClaimBadge, CLAIM_STATUS, money, date } from '@/components/owed/Bits';
 import { TOPIC } from '@/components/owed/topics';
 import { CLAIM_FLOW, slaOverdue } from '@core/owed/sqpm';
 import type { Claim, ClaimStatus } from '@core/owed/types';
-import { buildClaim, claimAction } from '../actions';
+import { buildClaim, claimAction, rewriteLetters } from '../actions';
+
+export const maxDuration = 60;
 
 export const dynamic = 'force-dynamic';
 
@@ -193,6 +195,13 @@ function ClaimCard({ c, lang, v, supName, supCode, error }: { c: Claim; lang: 'r
             )}
           </div>
 
+          {['draft', 'reviewed'].includes(c.status) && (
+            <form action={rewriteLetters} className="flex items-center gap-2 text-[13px]">
+              <input type="hidden" name="id" value={c.id} />
+              <button className="underline underline-offset-2 disabled:opacity-40" disabled={v.role !== 'buyer' && v.role !== 'quality'}>{c.letters.source === 'model' ? (ru ? 'Переписать письмо агентом' : 'Rewrite with the agent') : (ru ? 'Написать письмо агентом (сейчас шаблон)' : 'Write with the agent (template now)')}</button>
+              <span className="text-mute">{ru ? 'до минуты' : 'up to a minute'}</span>
+            </form>
+          )}
           {(c.letters.en || c.letters.zh || c.letters.ru) && (
             <div className="space-y-2">
               {([['ru', 'Русский (для архива)'], ['en', 'English'], ['zh', '中文']] as const).map(([k, label]) => c.letters[k] ? (

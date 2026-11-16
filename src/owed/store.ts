@@ -23,6 +23,8 @@ export interface Store {
   auditLog(limit?: number): Promise<AuditEntry[]>;
   findCaseByRef(channel: string, ref: string): Promise<DefectCase | undefined>;
   saveCase(c: DefectCase): Promise<void>;
+  /** Many cases at once (one round trip in production). */
+  saveCases(cs: DefectCase[]): Promise<void>;
   saveClaim(c: Claim): Promise<void>;
   saveContract(c: Contract): Promise<void>;
   saveSettings(s: ScoreSettings): Promise<void>;
@@ -70,6 +72,7 @@ export class InMemoryStore implements Store {
     return this.d.cases.find(c => (c.channel === channel && c.externalRef === ref) || (c.sources ?? []).some(s => s.ref === ref));
   }
   async saveCase(c: DefectCase) { upsert(this.d.cases, c); }
+  async saveCases(cs: DefectCase[]) { for (const c of cs) upsert(this.d.cases, c); }
   async saveClaim(c: Claim) { upsert(this.d.claims, c); }
   async saveContract(c: Contract) { upsert(this.d.contracts, c); }
   async saveSettings(s: ScoreSettings) { this.d.settings = s; }

@@ -36,7 +36,7 @@ export class OwedDb {
     if (error) throw new Error(`owed_docs upsert: ${error.message}`);
   }
 
-  private async bulk(rows: { kind: Kind; id: string; data: unknown }[]) {
+  async bulk(rows: { kind: Kind; id: string; data: unknown }[]) {
     for (let i = 0; i < rows.length; i += 400) {
       const { error } = await this.sb.from('owed_docs').upsert(rows.slice(i, i + 400).map(r => ({ ...r, updated_at: new Date().toISOString() })));
       if (error) throw new Error(`owed_docs seed: ${error.message}`);
@@ -85,6 +85,7 @@ export class OwedDb {
 export class SupabaseOwedStore extends InMemoryStore {
   constructor(private db: OwedDb, data: StoreData, public runs: any[]) { super(data); }
   override async saveCase(c: DefectCase) { await super.saveCase(c); await this.db.upsert('case', c.id, c); }
+  override async saveCases(cs: DefectCase[]) { await super.saveCases(cs); await this.db.bulk(cs.map(c => ({ kind: 'case' as const, id: c.id, data: c }))); }
   override async saveClaim(c: Claim) { await super.saveClaim(c); await this.db.upsert('claim', c.id, c); }
   override async saveContract(c: Contract) { await super.saveContract(c); await this.db.upsert('contract', c.id, c); }
   override async saveSettings(s: ScoreSettings) { await super.saveSettings(s); await this.db.upsert('settings', 'main', s); }

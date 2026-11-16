@@ -17,7 +17,7 @@ export async function OwedRoleBox({ lang }: { lang: 'ru' | 'en' }) {
       <form action={setRole} className="flex flex-col gap-1.5">
         <label htmlFor="owed-role" className="text-mute">{ru ? 'Вы работаете как' : 'You work as'}</label>
         <div className="flex gap-1.5">
-          <select id="owed-role" name="role" defaultValue={role} className="flex-1 min-w-0 rounded-md border border-stone-300 bg-paper px-2 py-1.5">
+          <select key={role} id="owed-role" name="role" defaultValue={role} className="flex-1 min-w-0 rounded-md border border-stone-300 bg-paper px-2 py-1.5">
             {ROLES.map(r => <option key={r} value={r}>{ROLE_LABEL[r][lang]}</option>)}
           </select>
           <button className="rounded-md border border-stone-300 px-2.5 py-1.5 font-medium">{ru ? 'ок' : 'ok'}</button>

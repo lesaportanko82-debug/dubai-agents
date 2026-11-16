@@ -82,10 +82,11 @@ export function claimFacts(claim: Claim, supplier: Supplier) {
 }
 
 /** Letters in EN + ZH (to the factory) and RU (internal). Template fallback keeps the flow working without a model. */
-export async function writeClaimLetters(client: ModelClient | undefined, claim: Claim, supplier: Supplier, model = defaultModel()): Promise<Claim['letters']> {
+export async function writeClaimLetters(client: ModelClient | undefined, claim: Claim, supplier: Supplier, model = defaultModel(), timeoutMs = 25_000): Promise<Claim['letters']> {
   if (client) {
     try {
-      const res = await client.create({ model, max_tokens: 2600, system: CLAIM_SYSTEM, tools: [], messages: [{ role: 'user', content: `Facts (use only these):\n${JSON.stringify(claimFacts(claim, supplier), null, 2)}` }] });
+      const timeout = new Promise<never>((_, rej) => setTimeout(() => rej(new Error('timeout')), timeoutMs));
+      const res = await Promise.race([timeout, client.create({ model, max_tokens: 2600, system: CLAIM_SYSTEM, tools: [], messages: [{ role: 'user', content: `Facts (use only these):\n${JSON.stringify(claimFacts(claim, supplier), null, 2)}` }] })]);
       const j = parseJson(res.content.filter(b => b.type === 'text').map(b => (b as any).text).join(''));
       if (j.text_en && j.text_zh) return { en: String(j.text_en), zh: String(j.text_zh), ru: String(j.text_ru ?? ''), source: 'model' };
     } catch { /* fall through to the template */ }

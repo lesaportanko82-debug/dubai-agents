@@ -85,12 +85,11 @@ export async function buildClaim(formData: FormData) {
   if (!claim) return redirect(`/owed/claims?supplier=${code}&error=nothing`);
   let client;
   try { if (process.env.OPENAI_API_KEY || process.env.ANTHROPIC_API_KEY) client = await getModelClient(); } catch { /* template */ }
+  // the agent gets 25 s to write the three letters; otherwise the template (same numbers and clauses) is used
   claim.letters = await writeClaimLetters(client, claim, supplier);
   await store.saveClaim(claim);
-  for (const id of claim.caseIds) {
-    const c = cases.find(x => x.id === id);
-    if (c) { c.claimId = claim.id; await store.saveCase(c); }
-  }
+  const ids = new Set(claim.caseIds);
+  await store.saveCases(cases.filter(c => ids.has(c.id)).map(c => ({ ...c, claimId: claim.id })));
   await store.audit({ at: nowIso, actor: role, action: 'claim.drafted', entityId: claim.id, details: { supplier: code, amount: claim.amount, cases: claim.caseIds.length, letters: claim.letters.source } });
   done();
   redirect(`/owed/claims?open=${claim.id}`);
@@ -118,13 +117,8 @@ export async function claimAction(formData: FormData) {
   // cases follow the claim
   const caseStatus = to === 'sent' ? 'claimed' : to === 'acknowledged' ? 'offered' : to === 'paid' ? 'recovered' : to === 'withdrawn' ? 'evidenced' : undefined;
   if (caseStatus) {
-    for (const cid of next.caseIds) {
-      const c = cases.find(x => x.id === cid);
-      if (!c) continue;
-      c.status = caseStatus as any;
-      if (to === 'withdrawn') c.claimId = undefined;
-      await store.saveCase(c);
-    }
+    const ids = new Set(next.caseIds);
+    await store.saveCases(cases.filter(c => ids.has(c.id)).map(c => ({ ...c, status: caseStatus as any, claimId: to === 'withdrawn' ? undefined : c.claimId })));
   }
   await store.audit({ at: nowIso, actor: role, action: `claim.${to}`, entityId: id, details: { number: claim.number, amount: paid ?? claim.amount, note } });
   done();
@@ -185,6 +179,23 @@ export async function saveWeights(formData: FormData) {
   await store.saveSettings(next);
   await store.audit({ at: nowIso, actor: role, action: 'settings.weights', details: next.weights });
   done();
+}
+
+/** Let the agent rewrite the letters of a draft (e.g. after a template was used). */
+export async function rewriteLetters(formData: FormData) {
+  loadRootEnv();
+  const { store, role, nowIso } = await owedContext();
+  const id = String(formData.get('id'));
+  const claim = (await store.claims()).find(c => c.id === id);
+  if (!claim || !['draft', 'reviewed'].includes(claim.status) || !can(role, ['buyer', 'quality'])) return;
+  const sup = (await store.suppliers()).find(s => s.id === claim.supplierId)!;
+  let client;
+  try { client = await getModelClient(); } catch (e: any) { return redirect(`/owed/claims?open=${id}&error=${encodeURIComponent(e.message)}`); }
+  const letters = await writeClaimLetters(client, claim, sup, undefined, 55_000);
+  await store.saveClaim({ ...claim, letters });
+  await store.audit({ at: nowIso, actor: 'agent', action: 'claim.letters', entityId: id, details: { source: letters.source } });
+  done();
+  redirect(`/owed/claims?open=${id}`);
 }
 
 /* back-compat: the old pack approval button */

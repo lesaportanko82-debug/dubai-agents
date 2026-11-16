@@ -20,6 +20,7 @@ const ACTION: Record<string, { ru: string; en: string }> = {
   'claim.paid': { ru: 'компенсация получена', en: 'payment received' },
   'claim.legal': { ru: 'передано юристу', en: 'escalated to legal' },
   'claim.withdrawn': { ru: 'претензия отозвана', en: 'claim withdrawn' },
+  'claim.letters': { ru: 'агент переписал письмо', en: 'agent rewrote the letter' },
   'claim.draft': { ru: 'возвращено в черновик', en: 'back to draft' },
   'contract.analysed': { ru: 'AI разобрал договор', en: 'AI analysed a contract' },
   'contract.clause_confirm': { ru: 'условие договора подтверждено', en: 'contract term confirmed' },

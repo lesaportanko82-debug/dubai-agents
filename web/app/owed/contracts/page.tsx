@@ -7,6 +7,7 @@ import { analyseContract, clauseAction } from '../actions';
 import { date } from '@/components/owed/Bits';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 60;
 
 export default async function ContractsPage({ searchParams }: { searchParams: Promise<{ c?: string; error?: string; rejected?: string }> }) {
   const lang = await getLang();
